@@ -1,0 +1,12 @@
+body { background: #0E1217; margin: 0; color: #EAEDF3; }
+
+.num { font-family: ui-monospace, "SF Mono", "Roboto Mono", monospace; font-variant-numeric: tabular-nums; }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: #2A323D; border-radius: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.js-plotly-plot .plotly, .js-plotly-plot .plot-container { background: transparent !important; }
+
+.metric-card { transition: border-color .15s ease; }
+a:hover > .metric-card { border-color: rgba(31,208,130,.45) !important; cursor: pointer; }

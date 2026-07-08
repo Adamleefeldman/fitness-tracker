@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.adamfeldman.garminsync</string>
+
+    <!-- What to run -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/adamfeldman/garmin-health/automation/run_sync.sh</string>
+    </array>
+
+    <!-- When: every day at 07:00 local. If the Mac is asleep at 7am, launchd
+         runs it once at the next wake. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- launchd's own stdout/stderr (the script logs in detail to logs/sync.log) -->
+    <key>StandardOutPath</key>
+    <string>/Users/adamfeldman/garmin-health/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/adamfeldman/garmin-health/logs/launchd.err.log</string>
+
+    <!-- Don't fire on load; only at the scheduled time. -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
