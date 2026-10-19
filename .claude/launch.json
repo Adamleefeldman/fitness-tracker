@@ -7,6 +7,14 @@
       "runtimeArgs": ["run", "python", "-m", "dashboard.app"],
       "port": 8050,
       "autoPort": true
+    },
+    {
+      "name": "web",
+      "cwd": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000,
+      "autoPort": true
     }
   ]
 }
