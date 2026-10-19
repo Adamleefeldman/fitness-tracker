@@ -27,6 +27,11 @@ def _mean_tail(series, n):
     return float(s.mean()) if len(s) else None
 
 
+def _cap(s):
+    """Upper-case the first letter only (str.capitalize would lower-case 'HRV')."""
+    return s[:1].upper() + s[1:]
+
+
 def today(d):
     """Train hard today? Driven by Garmin readiness + its weakest factor."""
     from dashboard import theme as T
@@ -78,13 +83,13 @@ def load(d):
     elif flags:
         word, status = "Watch recovery", "caution"
         why = f"load ratio {ratio:.2f} is balanced, but " + " and ".join(flags)
-        return {"status": status, "word": word, "sentence": why.capitalize()}
+        return {"status": status, "word": word, "sentence": _cap(why)}
     else:
         word, status = "Balanced", "good"
         why = f"load ratio {ratio:.2f} is in the sweet spot"
     if flags:
         why += ", and " + " and ".join(flags)
-    return {"status": status, "word": word, "sentence": why.capitalize()}
+    return {"status": status, "word": word, "sentence": _cap(why)}
 
 
 def fitness(d, acts):
