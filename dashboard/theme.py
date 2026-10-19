@@ -1,10 +1,14 @@
-"""Palette, Mantine theme, and Plotly figure helpers for the dashboard."""
+"""Palette, Mantine theme and status-colour helpers for the dashboard.
+
+Colour language (full traffic light):
+  GREEN  = good           AMBER = caution        RED = genuinely bad
+  Neutral metrics (RHR, steps, pace, ...) use NEUTRAL/BLUE so alarm colours
+  keep their meaning. Zone fills use the *_ZONE rgba variants.
+"""
 
 from __future__ import annotations
 
-import plotly.graph_objects as go
-
-# --- palette (matches the approved dark + vital-green mockup) ---
+# --- palette (dark + vital-green) ---
 BG = "#0E1217"
 SIDEBAR = "#0A0D11"
 CARD = "#181D25"
@@ -16,7 +20,24 @@ GREEN = "#1FD082"
 AMBER = "#F4B740"
 RED = "#F2685C"
 BLUE = "#5B9BD5"
+PURPLE = "#AB8FE0"
+ORANGE = "#FFA15A"
+NEUTRAL = "#8A97A8"  # lines for metrics with no good/bad direction
 TRACK = "#232A33"
+
+# translucent zone fills for "what good looks like" bands on charts
+GREEN_ZONE = "rgba(31,208,130,0.08)"
+AMBER_ZONE = "rgba(244,183,64,0.07)"
+RED_ZONE = "rgba(242,104,92,0.07)"
+
+STATUS = {"good": GREEN, "caution": AMBER, "bad": RED, "neutral": MUTED}
+
+
+def rgba(hex_color, alpha):
+    """'#1FD082', 0.2 -> 'rgba(31,208,130,0.2)' (for glows, washes, fills)."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
 
 MANTINE_THEME = {
     "primaryColor": "vital",
@@ -29,12 +50,16 @@ MANTINE_THEME = {
     "defaultRadius": "md",
 }
 
+# Garmin's training-readiness levels are PRIME · HIGH · MODERATE · LOW · POOR
+# (older firmware used VERY_HIGH / VERY_LOW — kept here as aliases so both map).
 _LEVELS = {
-    "VERY_HIGH": ("Prime", "You're primed — go for it"),
+    "PRIME": ("Prime", "You're primed — go for it"),
     "HIGH": ("High", "Ready to train hard"),
     "MODERATE": ("Moderate", "Listen to your body"),
     "LOW": ("Low", "Keep it easy today"),
-    "VERY_LOW": ("Very low", "Prioritise recovery"),
+    "POOR": ("Poor", "Prioritise recovery"),
+    "VERY_HIGH": ("Prime", "You're primed — go for it"),
+    "VERY_LOW": ("Poor", "Prioritise recovery"),
 }
 
 
@@ -44,11 +69,11 @@ def friendly_level(level):
 
 def color_for_level(level):
     lvl = (level or "").upper()
-    if lvl in ("HIGH", "VERY_HIGH"):
+    if lvl in ("PRIME", "HIGH", "VERY_HIGH"):
         return GREEN
     if lvl in ("MODERATE", "MAINTAINING"):
         return AMBER
-    if lvl in ("LOW", "VERY_LOW"):
+    if lvl in ("LOW", "POOR", "VERY_LOW"):
         return RED
     return MUTED
 
@@ -59,41 +84,3 @@ def color_for_pct(p):
     except (TypeError, ValueError):
         return MUTED
     return GREEN if p >= 75 else (AMBER if p >= 50 else RED)
-
-
-def _dark(fig, height):
-    fig.update_layout(
-        height=height, margin=dict(l=0, r=0, t=4, b=0),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=MUTED, size=11), showlegend=False,
-    )
-    return fig
-
-
-def sparkline_fig(values, color):
-    fig = go.Figure(go.Scatter(
-        x=list(range(len(values))), y=values, mode="lines",
-        line=dict(color=color, width=2), hoverinfo="skip",
-    ))
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible=False)
-    fig = _dark(fig, 34)
-    fig.update_layout(hovermode=False)
-    return fig
-
-
-def readiness_trend_fig(daily):
-    # `daily` is already windowed by the caller (time-range control).
-    fig = go.Figure()
-    fig.add_hrect(y0=67, y1=100, fillcolor="rgba(31,208,130,0.07)", line_width=0)
-    fig.add_hrect(y0=34, y1=67, fillcolor="rgba(244,183,64,0.07)", line_width=0)
-    fig.add_hrect(y0=0, y1=34, fillcolor="rgba(242,104,92,0.07)", line_width=0)
-    fig.add_trace(go.Scatter(
-        x=daily["date"], y=daily["training_readiness_score"], mode="lines",
-        line=dict(color=TEXT, width=2), name="readiness",
-    ))
-    fig = _dark(fig, 180)
-    fig.update_yaxes(range=[0, 100], showgrid=False, tickfont=dict(color=FAINT, size=10))
-    fig.update_xaxes(showgrid=False, tickfont=dict(color=FAINT, size=10))
-    fig.update_layout(margin=dict(l=26, r=8, t=6, b=22), hovermode="x unified")
-    return fig

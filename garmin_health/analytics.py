@@ -91,6 +91,79 @@ def readiness_drivers(daily: pd.DataFrame) -> dict:
         return {}
 
 
+def last_synced(conn=None):
+    """Most recent sync timestamp as a local-tz datetime, or None."""
+    own = conn is None
+    conn = conn or db.connect()
+    try:
+        row = conn.execute("SELECT MAX(synced_at) FROM daily_metrics").fetchone()
+    finally:
+        if own:
+            conn.close()
+    if not row or not row[0]:
+        return None
+    import datetime as _dt
+
+    ts = pd.Timestamp(row[0])
+    local_tz = _dt.datetime.now().astimezone().tzinfo
+    ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts
+    return ts.tz_convert(local_tz).to_pydatetime()
+
+
+def weekly_hours_by_type(activities: pd.DataFrame, top: int = 5) -> pd.DataFrame:
+    """Weekly training hours pivoted by activity type (top N types + 'other')."""
+    if activities.empty or "date" not in activities:
+        return pd.DataFrame()
+    a = activities.dropna(subset=["date", "duration_s"]).copy()
+    keep = a["activity_type"].value_counts().head(top).index
+    a["type"] = a["activity_type"].where(a["activity_type"].isin(keep), "other")
+    a["hours"] = a["duration_s"] / 3600
+    wk = (a.set_index("date").groupby("type").resample("W")["hours"].sum()
+            .unstack(0).fillna(0))
+    return wk.reset_index().rename(columns={"date": "week"})
+
+
+def weekly_intensity(activities: pd.DataFrame) -> pd.DataFrame:
+    """Sessions per week binned by intensity from Garmin training effect.
+
+    hard: aerobic TE >= 3.5 or anaerobic TE >= 2.5 (improving / highly improving)
+    moderate: aerobic TE >= 2.5 (maintaining)
+    easy: everything below (recovery / minor benefit)
+    """
+    if activities.empty or "aerobic_te" not in activities:
+        return pd.DataFrame()
+    a = activities.dropna(subset=["date"]).copy()
+    ate = a["aerobic_te"].fillna(0)
+    ane = a["anaerobic_te"].fillna(0)
+    a["intensity"] = "easy"
+    a.loc[ate >= 2.5, "intensity"] = "moderate"
+    a.loc[(ate >= 3.5) | (ane >= 2.5), "intensity"] = "hard"
+    wk = (a.set_index("date").groupby("intensity").resample("W")["activity_id"].count()
+            .unstack(0).fillna(0))
+    for col in ("easy", "moderate", "hard"):
+        if col not in wk:
+            wk[col] = 0
+    return wk.reset_index().rename(columns={"date": "week"})
+
+
+def sleep_times(daily: pd.DataFrame) -> pd.DataFrame:
+    """Bed/wake times as hours relative to midnight of each row's date.
+
+    bed_h is negative when bedtime falls before midnight (previous evening),
+    so 23:30 -> -0.5 and 00:45 -> 0.75; wake_h is e.g. 7.25 for 07:15.
+    """
+    need = {"sleep_start", "sleep_end"}
+    if daily.empty or not need.issubset(daily.columns):
+        return pd.DataFrame(columns=["date", "bed_h", "wake_h"])
+    d = daily.dropna(subset=["sleep_start", "sleep_end"]).copy()
+    if d.empty:
+        return pd.DataFrame(columns=["date", "bed_h", "wake_h"])
+    midnight = pd.to_datetime(d["date"])
+    d["bed_h"] = (pd.to_datetime(d["sleep_start"]) - midnight).dt.total_seconds() / 3600
+    d["wake_h"] = (pd.to_datetime(d["sleep_end"]) - midnight).dt.total_seconds() / 3600
+    return d[["date", "bed_h", "wake_h"]]
+
+
 def latest(daily: pd.DataFrame, columns) -> dict:
     """Most-recent non-null value for each requested column."""
     out = {}

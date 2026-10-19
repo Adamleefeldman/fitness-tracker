@@ -2,50 +2,81 @@
 
 from __future__ import annotations
 
+import datetime as _dt
+
 import dash_mantine_components as dmc
-from dash import dcc
+from dash import dcc, html
 from dash_iconify import DashIconify
 
+from dashboard import figures as F
 from dashboard import theme as T
 
-# (href, label, icon, section-label-above-or-None)
+# Question-led navigation: each page answers one question.
+# (href, label, icon, question)
 NAV = [
-    ("/", "Overview", "tabler:layout-dashboard", "Today"),
-    ("/recovery", "Recovery", "tabler:heart", "Explore"),
-    ("/training", "Training", "tabler:trending-up", None),
-    ("/activities", "Activities", "tabler:run", None),
-    ("/sleep", "Sleep", "tabler:moon", None),
+    ("/", "Today", "tabler:sun-high", "Train hard today?"),
+    ("/load", "Load", "tabler:barbell", "Am I overtraining?"),
+    ("/fitness", "Fitness", "tabler:trending-up", "Am I getting fitter?"),
+    ("/sleep", "Sleep", "tabler:moon", "Recovering well?"),
 ]
 
 
 def brand():
+    # On phones the wordmark hides so the header has room for the range control;
+    # the green pulse icon alone carries the brand.
     return dmc.Group(
         [DashIconify(icon="tabler:activity", width=20, color=T.GREEN),
-         dmc.Text("Garmin health", fw=500, c=T.TEXT)],
+         dmc.Text("Garmin health", fw=500, c=T.TEXT, visibleFrom="sm")],
         gap=8,
     )
 
 
 def nav_links(active):
     items = []
-    for href, label, icon, section in NAV:
-        if section:
-            items.append(dmc.Text(section, size="xs", c=T.FAINT, mt="sm", mb=4, px="xs"))
+    for href, label, icon, question in NAV:
         items.append(dmc.NavLink(
-            label=label, href=href, active=(href == active),
+            label=label, description=question, href=href, active=(href == active),
             leftSection=DashIconify(icon=icon, width=18),
             color="vital", variant="filled" if href == active else "subtle",
-            styles={"root": {"borderRadius": 9}},
+            styles={"root": {"borderRadius": 9},
+                    "description": {"fontSize": 11}},
         ))
     return items
 
 
-def sync_pill():
+def bottom_tabs(active):
+    """Mobile bottom tab bar (the installed-PWA navigation)."""
+    tabs = []
+    for href, label, icon, _q in NAV:
+        is_active = href == active
+        color = T.GREEN if is_active else T.FAINT
+        tabs.append(dcc.Link(
+            dmc.Stack([
+                DashIconify(icon=icon, width=22, color=color),
+                dmc.Text(label, size="10px", c=color, fw=600 if is_active else 400),
+            ], gap=2, align="center"),
+            href=href, style={"textDecoration": "none", "flex": 1,
+                              "display": "flex", "justifyContent": "center"},
+        ))
+    return html.Div(tabs, className="bottom-tabs")
+
+
+def sync_pill(synced_at, **kw):
+    if synced_at is None:
+        label, color = "Not synced", T.FAINT
+    else:
+        now = _dt.datetime.now(synced_at.tzinfo)
+        fresh = (now - synced_at) < _dt.timedelta(hours=36)
+        t = synced_at.strftime("%-I:%M%p").lower()
+        label = (f"Synced {t}" if synced_at.date() == now.date()
+                 else f"Synced {synced_at.strftime('%a')} {t}")
+        color = T.GREEN if fresh else T.AMBER
     return dmc.Group(
-        [DashIconify(icon="tabler:refresh", width=14, color=T.GREEN),
-         dmc.Text("Synced 7:00am", size="xs", c=T.MUTED)],
+        [DashIconify(icon="tabler:refresh", width=14, color=color),
+         dmc.Text(label, size="xs", c=T.MUTED)],
         gap=6, px=11, py=5,
         style={"background": T.CARD, "border": f"1px solid {T.BORDER}", "borderRadius": 20},
+        **kw,
     )
 
 
@@ -55,7 +86,30 @@ def card(children, **kw):
     kw.setdefault("bg", T.CARD)
     kw.setdefault("radius", "md")
     kw.setdefault("p", "md")
+    kw["className"] = ("panel-card " + kw.get("className", "")).strip()
     return dmc.Paper(children, style=style, **kw)
+
+
+def verdict_banner(v):
+    """Status dot + verdict word + one-line reasoning, washed in the status
+    colour so the page's answer reads before any chart does."""
+    color = T.STATUS.get(v["status"], T.MUTED)
+    return dmc.Paper(
+        dmc.Group([
+            html.Div(style={"width": 9, "height": 9, "borderRadius": "50%",
+                            "background": color, "flexShrink": 0,
+                            "boxShadow": f"0 0 10px {color}"}),
+            dmc.Text(v["word"], fw=600, fz=15, c=color),
+            dmc.Text(v["sentence"], size="sm", c=T.MUTED, style={"flex": 1}),
+        ], gap=10, wrap="wrap"),
+        radius="md", p="sm", px="md",
+        style={
+            "background": f"linear-gradient(90deg, {T.rgba(color, 0.10)}, "
+                          f"{T.rgba(color, 0.03)} 55%, transparent)",
+            "border": f"1px solid {T.rgba(color, 0.22)}",
+            "borderLeft": f"3px solid {color}",
+        },
+    )
 
 
 def readiness_ring(score, color):
@@ -106,7 +160,7 @@ def metric_card(label, value, unit, delta_text, delta_color, arrow_icon, icon, s
             gap=4, mt=2,
         ),
         dcc.Graph(
-            figure=T.sparkline_fig(series, line_color),
+            figure=F.sparkline(series, line_color),
             config={"displayModeBar": False, "staticPlot": True},
             style={"height": "34px", "marginTop": "6px"},
         ),

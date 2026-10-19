@@ -8,5 +8,70 @@ body { background: #0E1217; margin: 0; color: #EAEDF3; }
 
 .js-plotly-plot .plotly, .js-plotly-plot .plot-container { background: transparent !important; }
 
-.metric-card { transition: border-color .15s ease; }
-a:hover > .metric-card { border-color: rgba(31,208,130,.45) !important; cursor: pointer; }
+/* --- Atmosphere & depth --- */
+
+/* Ambient glows anchored to the viewport (fixed) so the flat dark canvas gets
+   a hint of depth without competing with the charts. */
+main.mantine-AppShell-main {
+  background:
+    radial-gradient(1100px 520px at 12% -8%, rgba(31,208,130,0.055), transparent 60%),
+    radial-gradient(900px 600px at 108% 112%, rgba(91,155,213,0.045), transparent 60%),
+    #0E1217;
+  background-attachment: fixed, fixed, scroll;
+}
+
+/* Faint top-light on every card: reads as a soft sheen, not a new colour. */
+.panel-card {
+  background-image: linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0) 42%);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.28);
+}
+
+.metric-card { transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease; }
+a:hover > .metric-card {
+  border-color: rgba(31,208,130,.45) !important;
+  cursor: pointer;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+}
+
+/* --- Mobile + installed-PWA polish --- */
+
+/* No blue flash on tap; don't let iOS resize our type on rotate. */
+* { -webkit-tap-highlight-color: transparent; }
+html, body { -webkit-text-size-adjust: 100%; }
+
+/* Keep the last card clear of the iOS home indicator when launched from the home
+   screen. env() is 0 on desktop / non-notch devices, so this is a no-op there. */
+main.mantine-AppShell-main {
+  padding-bottom: calc(var(--app-shell-padding, 16px) + env(safe-area-inset-bottom));
+}
+
+/* Reclaim a little width on phones (the navbar is collapsed here). */
+@media (max-width: 48em) {
+  main.mantine-AppShell-main { padding-left: 12px; padding-right: 12px; }
+}
+
+/* --- Bottom tab bar (mobile navigation) --- */
+
+.bottom-tabs {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-bottom: env(safe-area-inset-bottom); /* clear the iOS home indicator */
+}
+
+/* Desktop navigates with the sidebar: hide the tab bar and give the main
+   area its padding back (Mantine reserves footer space via this var). */
+@media (min-width: 48em) {
+  .tabbar { display: none; }
+  .mantine-AppShell-root, #appshell { --app-shell-footer-offset: 0px !important; }
+  main.mantine-AppShell-main { padding-bottom: var(--app-shell-padding, 16px); }
+}
+
+/* On phones, grow the footer by the safe area so tabs sit above the bar. */
+@media (max-width: 48em) {
+  .tabbar { height: calc(58px + env(safe-area-inset-bottom)) !important; }
+  main.mantine-AppShell-main {
+    padding-bottom: calc(58px + var(--app-shell-padding, 16px) + env(safe-area-inset-bottom));
+  }
+}

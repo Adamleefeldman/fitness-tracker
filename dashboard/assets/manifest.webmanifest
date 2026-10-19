@@ -1,0 +1,27 @@
+{
+  "name": "Garmin Health",
+  "short_name": "Garmin",
+  "description": "Your Garmin readiness, recovery, training and sleep at a glance.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0E1217",
+  "theme_color": "#0E1217",
+  "categories": ["health", "fitness", "lifestyle"],
+  "icons": [
+    {
+      "src": "/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
