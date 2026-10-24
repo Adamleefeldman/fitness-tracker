@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 
-import { pyFixed } from "@/lib/format";
+import { mmss, pyFixed } from "@/lib/format";
 import * as T from "@/lib/theme";
 import type { Activity } from "@/lib/types";
 
@@ -13,15 +13,6 @@ const TH: CSSProperties = {
 const TD: CSSProperties = {
   padding: "6px 10px", color: T.TEXT, borderBottom: `1px solid ${T.BORDER}`, fontSize: 12,
 };
-
-/** 5.25 min/km → "5:15". */
-function mmss(minPerKm: number | null) {
-  if (minPerKm == null) return "—";
-  let m = Math.trunc(minPerKm);
-  let s = Math.round((minPerKm - m) * 60);
-  if (s === 60) [m, s] = [m + 1, 0];
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
 
 const num = (v: number | null, digits: number) => (v == null ? "—" : pyFixed(v, digits));
 

@@ -9,11 +9,11 @@ import {
   legendGrid,
   seriesTooltip,
   dateAxis,
-  toDate,
   valueAxis,
   zone,
   type ChartOption,
 } from "./theme";
+import { StackedWeeks } from "./weekly";
 
 import * as T from "@/lib/theme";
 
@@ -132,30 +132,10 @@ export function StepsChart({ dates, steps, avg7 }: { dates: string[]; steps: Ser
 
 const TYPE_PALETTE = [T.GREEN, T.BLUE, T.PURPLE, T.ORANGE, "#E87BA4", T.FAINT];
 
-const WEEK_FMT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
-
 /** Weekly training hours stacked by activity type, biggest type at the bottom. */
 export function WeeklyHoursChart({ weeks, types, hours }: {
   weeks: string[]; types: string[]; hours: Record<string, number[]>;
 }) {
-  const option: ChartOption = {
-    legend: { ...legend, data: types.toReversed() },
-    grid: legendGrid(),
-    xAxis: dateAxis(weeks, { bars: true }),
-    yAxis: valueAxis,
-    tooltip: {
-      ...seriesTooltip((v) => `${v.toFixed(1)}h`, (x) => `Week ending ${WEEK_FMT.format(toDate(x))}`),
-      axisPointer: { type: "shadow" },
-    },
-    series: types.map((t, i) => ({
-      type: "bar" as const,
-      name: t,
-      stack: "hours",
-      data: hours[t],
-      barWidth: "80%",
-      // a hairline of card colour separates stacked segments
-      itemStyle: { color: TYPE_PALETTE[i % TYPE_PALETTE.length], borderColor: T.CARD, borderWidth: 1 },
-    })),
-  };
-  return <EChart option={option} height={260} />;
+  const parts = types.map((t, i) => ({ name: t, color: TYPE_PALETTE[i % TYPE_PALETTE.length], data: hours[t] }));
+  return <StackedWeeks weeks={weeks} parts={parts} format={(v) => `${v.toFixed(1)}h`} />;
 }

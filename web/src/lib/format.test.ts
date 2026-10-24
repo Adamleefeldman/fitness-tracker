@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pyFixed } from "./format";
+import { mmss, pyFixed } from "./format";
 
 describe("pyFixed matches Python's f'{x:.Nf}'", () => {
   it.each([
@@ -22,5 +22,16 @@ describe("pyFixed matches Python's f'{x:.Nf}'", () => {
     [0, 1, "0.0"],
   ])("pyFixed(%d, %d) = %s", (x, digits, want) => {
     expect(pyFixed(x, digits)).toBe(want);
+  });
+});
+
+describe("mmss", () => {
+  it.each([
+    [5.25, "5:15"],
+    [5.0, "5:00"],
+    [5.995, "6:00"], // 59.7s rounds to 60 → carries into the minute
+    [null, "—"],
+  ])("mmss(%s) = %s", (x, want) => {
+    expect(mmss(x)).toBe(want);
   });
 });

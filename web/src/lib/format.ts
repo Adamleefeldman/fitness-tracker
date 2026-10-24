@@ -21,3 +21,12 @@ export function pyFixed(x: number, digits = 0): string {
   const sign = x < 0 && abs !== 0 ? "-" : "";
   return sign + abs.toFixed(digits);
 }
+
+/** Pace in decimal minutes → "m:ss" (5.25 → "5:15"), carrying 60s into the minute. */
+export function mmss(minutes: number | null | undefined): string {
+  if (minutes == null || Number.isNaN(minutes)) return "—";
+  let m = Math.trunc(minutes);
+  let s = Math.round((minutes - m) * 60);
+  if (s === 60) [m, s] = [m + 1, 0];
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
