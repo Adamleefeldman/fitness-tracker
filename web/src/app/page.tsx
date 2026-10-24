@@ -1,11 +1,17 @@
 import { Suspense } from "react";
 
-import { PageLoading, PageStub } from "@/components/PageStub";
+import { PageLoading } from "@/components/PageStub";
+import { parseRange } from "@/lib/range";
+import { TodayView } from "@/views/Today";
+
+async function Today({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
+  return <TodayView range={parseRange((await searchParams).range)} />;
+}
 
 export default function TodayPage({ searchParams }: PageProps<"/">) {
   return (
     <Suspense fallback={<PageLoading />}>
-      <PageStub href="/" searchParams={searchParams} />
+      <Today searchParams={searchParams} />
     </Suspense>
   );
 }
