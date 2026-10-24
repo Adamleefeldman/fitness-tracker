@@ -4,6 +4,7 @@ import {
   Box,
   Center,
   Group,
+  Paper,
   Progress,
   RingProgress,
   SimpleGrid,
@@ -17,6 +18,7 @@ import type { ReactNode } from "react";
 import { Card } from "@/components/Card";
 import { Sparkline } from "@/components/charts/Sparkline";
 import * as T from "@/lib/theme";
+import type { Verdict } from "@/lib/verdicts";
 
 export const SUBTLE = "#C2C8D2"; // panel titles and secondary sentences
 
@@ -134,4 +136,53 @@ export function EmptyState({ title }: { title: string }) {
       </Stack>
     </Center>
   );
+}
+
+/**
+ * Status dot + verdict word + one-line reasoning, washed in the status colour
+ * so the page's answer reads before any chart does.
+ */
+export function VerdictBanner({ verdict }: { verdict: Verdict }) {
+  const color = T.STATUS[verdict.status] ?? T.MUTED;
+  return (
+    <Paper
+      radius="md"
+      p="sm"
+      px="md"
+      style={{
+        background: `linear-gradient(90deg, ${T.rgba(color, 0.1)}, ${T.rgba(color, 0.03)} 55%, transparent)`,
+        border: `1px solid ${T.rgba(color, 0.22)}`,
+        borderLeft: `3px solid ${color}`,
+      }}
+    >
+      <Group gap={10} wrap="wrap">
+        <div
+          style={{
+            width: 9, height: 9, borderRadius: "50%", background: color,
+            flexShrink: 0, boxShadow: `0 0 10px ${color}`,
+          }}
+        />
+        <Text fw={600} fz={15} c={color}>{verdict.word}</Text>
+        <Text size="sm" c={T.MUTED} style={{ flex: 1 }}>{verdict.sentence}</Text>
+      </Group>
+    </Paper>
+  );
+}
+
+/** Page title + its question, then the verdict that answers it. */
+export function PageHeader({ title, question, verdict }: { title: string; question: string; verdict: Verdict }) {
+  return (
+    <Stack gap={8}>
+      <Group gap={10} align="baseline">
+        <Text fz={18} fw={500} c={T.TEXT}>{title}</Text>
+        <Text size="xs" c={T.FAINT}>{question}</Text>
+      </Group>
+      <VerdictBanner verdict={verdict} />
+    </Stack>
+  );
+}
+
+/** Two panels side by side on desktop, stacked on phones. */
+export function TwoUp({ children }: { children: ReactNode }) {
+  return <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">{children}</SimpleGrid>;
 }

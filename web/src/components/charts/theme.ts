@@ -8,9 +8,10 @@
  *     where colour itself encodes meaning (traffic light or category).
  */
 
-import type { LineSeriesOption, ScatterSeriesOption } from "echarts/charts";
+import type { BarSeriesOption, LineSeriesOption, ScatterSeriesOption } from "echarts/charts";
 import type {
   GridComponentOption,
+  LegendComponentOption,
   MarkAreaComponentOption,
   TooltipComponentOption,
 } from "echarts/components";
@@ -20,8 +21,10 @@ import * as T from "@/lib/theme";
 
 export type ChartOption = ComposeOption<
   | LineSeriesOption
+  | BarSeriesOption
   | ScatterSeriesOption
   | GridComponentOption
+  | LegendComponentOption
   | TooltipComponentOption
   | MarkAreaComponentOption
 >;
@@ -45,22 +48,27 @@ export function grid(left = 42, right = 12, top = 10, bottom = 28): GridComponen
 
 const TICK_FMT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
-/** Dates along x, spanning exactly the data with a few "Oct 18" ticks. */
-export const timeAxis = {
-  type: "time" as const,
-  min: "dataMin",
-  max: "dataMax",
-  splitNumber: 5,
-  axisLine: { show: false },
-  axisTick: { show: false },
-  splitLine: { show: false },
-  axisLabel: {
-    color: T.FAINT,
-    fontSize: 10,
-    hideOverlap: true,
-    formatter: (v: number) => TICK_FMT.format(new Date(v)),
-  },
-};
+/**
+ * Dates along x as categories (one per day or week — the rows are contiguous),
+ * labelled "Oct 18" at about six evenly spaced points. Lines run edge to edge;
+ * bars sit in their own slot.
+ */
+export function dateAxis(dates: string[], { bars = false } = {}) {
+  return {
+    type: "category" as const,
+    data: dates,
+    boundaryGap: bars,
+    axisLine: { show: false },
+    axisTick: { show: false },
+    splitLine: { show: false },
+    axisLabel: {
+      color: T.FAINT,
+      fontSize: 10,
+      interval: Math.max(0, Math.ceil(dates.length / 6) - 1),
+      formatter: (v: string) => TICK_FMT.format(toDate(v)),
+    },
+  };
+}
 
 export const valueAxis = {
   type: "value" as const,
@@ -72,9 +80,14 @@ export const valueAxis = {
 
 const DATE_FMT = new Intl.DateTimeFormat("en-US", { weekday: "short", day: "numeric", month: "short" });
 
-/** "Sat, Oct 18" for a 'YYYY-MM-DD' or epoch-ms axis value. */
+/** An axis value ('YYYY-MM-DD', read as local midnight, or epoch ms) as a Date. */
+export function toDate(v: string | number) {
+  return typeof v === "number" ? new Date(v) : new Date(`${v}T00:00:00`);
+}
+
+/** "Sat, Oct 18" for an axis value. */
 export function fmtDate(v: string | number) {
-  return DATE_FMT.format(typeof v === "number" ? new Date(v) : new Date(`${v}T00:00:00`));
+  return DATE_FMT.format(toDate(v));
 }
 
 /** Crosshair + one tooltip for every series at the hovered date ("x unified"). */
@@ -97,7 +110,7 @@ export function zone(
   y0: number,
   y1: number,
   fill: string,
-  label?: { text: string; color: string; at: "top" | "bottom" },
+  label?: { text: string; color: string; at: "top" | "middle" | "bottom" },
 ): MarkAreaPair {
   return [
     {
@@ -107,7 +120,7 @@ export function zone(
         ? {
             show: true,
             formatter: label.text,
-            position: label.at === "top" ? "insideTopRight" : "insideBottomRight",
+            position: ({ top: "insideTopRight", middle: "insideRight", bottom: "insideBottomRight" } as const)[label.at],
             color: T.rgba(label.color, 0.55),
             fontSize: 10,
           }
@@ -115,4 +128,47 @@ export function zone(
     },
     { yAxis: y1 },
   ];
+}
+
+/** Horizontal legend above the plot, top-left (charts with >= 2 series). */
+export const legend: LegendComponentOption = {
+  top: 0,
+  left: 0,
+  itemWidth: 14,
+  itemHeight: 8,
+  itemGap: 14,
+  textStyle: { color: T.MUTED, fontSize: 11 },
+  inactiveColor: T.FAINT,
+};
+
+/** Grid with room for the legend above it. */
+export function legendGrid(left = 42, right = 12, bottom = 28): GridComponentOption {
+  return grid(left, right, 30, bottom);
+}
+
+interface TooltipRow {
+  marker?: unknown;
+  seriesName?: string;
+  axisValue?: string;
+  value?: unknown;
+}
+
+/**
+ * Multi-series axis tooltip: a date header, then one "● name  value" row per
+ * series (skipping series with no value that day). Values wear text ink; the
+ * marker dot carries the series identity.
+ */
+export function seriesTooltip(
+  format: (value: number, seriesName: string) => string,
+  header: (x: string | number) => string = fmtDate,
+): TooltipComponentOption {
+  return axisTooltip((params) => {
+    const rows = (Array.isArray(params) ? params : [params]) as TooltipRow[];
+    const lines = rows.flatMap((p) => {
+      const v = p.value as number | null | undefined;
+      if (v == null || Number.isNaN(v)) return [];
+      return [`${p.marker}${p.seriesName} <b style="float:right;margin-left:14px">${format(v, p.seriesName!)}</b>`];
+    });
+    return [header(rows[0].axisValue!), ...lines].join("<br/>");
+  });
 }

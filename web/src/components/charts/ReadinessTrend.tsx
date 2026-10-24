@@ -1,7 +1,7 @@
 "use client";
 
 import { EChart } from "./EChart";
-import { axisTooltip, fmtDate, grid, timeAxis, valueAxis, zone, type ChartOption } from "./theme";
+import { dateAxis, grid, seriesTooltip, valueAxis, zone, type ChartOption } from "./theme";
 
 import * as T from "@/lib/theme";
 
@@ -9,18 +9,14 @@ import * as T from "@/lib/theme";
 export function ReadinessTrend({ dates, scores }: { dates: string[]; scores: (number | null)[] }) {
   const option: ChartOption = {
     grid: grid(30, 8, 6, 22),
-    xAxis: timeAxis,
+    xAxis: dateAxis(dates),
     yAxis: { ...valueAxis, min: 0, max: 100, interval: 50, splitLine: { show: false } },
-    tooltip: axisTooltip((params) => {
-      const [p] = Array.isArray(params) ? params : [params];
-      const [date, v] = p.value as [string, number | null];
-      return `${fmtDate(date)}<br/><b>${v == null ? "—" : Math.round(v)}</b> readiness`;
-    }),
+    tooltip: seriesTooltip((v) => v.toFixed(0)),
     series: [
       {
         type: "line",
         name: "readiness",
-        data: dates.map((d, i) => [d, scores[i]]),
+        data: scores,
         showSymbol: false,
         lineStyle: { color: T.TEXT, width: 2 },
         itemStyle: { color: T.TEXT },
