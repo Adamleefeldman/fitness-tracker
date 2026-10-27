@@ -3,6 +3,9 @@
  *
  * Readiness hero (ring + verdict + drivers), the readiness trend, then a grid
  * of metric cards each judged against its own 7-day average.
+ *
+ * Judged on the newest day with data: when the watch hasn't uploaded yet the
+ * sync stores blank days, and the page says which day it's showing instead.
  */
 
 import { Box, Group, SimpleGrid, Stack, Text } from "@mantine/core";
@@ -41,11 +44,17 @@ import type { Daily } from "@/lib/types";
 import * as VD from "@/lib/verdicts";
 
 const ICON = 15;
+
+/** "Sat, Oct 24" */
+function dayLabel(date: string) {
+  return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+  });
+}
 const DELTA_ICON = 13;
 
 /** "7h 32m" from seconds. */
-function hm(seconds: number | null | undefined) {
-  if (!seconds) return "—";
+function hm(seconds: number) {
   const s = Math.trunc(seconds);
   return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
 }
@@ -57,7 +66,7 @@ interface MetricSpec {
   icon: React.ReactNode;
   higherGood?: boolean;
   digits?: number; // value precision
-  value?: string; // overrides the formatted latest value
+  format?: (v: number) => string; // overrides the default number formatting
   line?: string;
   deltaDiv?: number;
   deltaUnit?: string;
@@ -77,7 +86,10 @@ function metric(daily: Daily[], range: RangeKey, m: MetricSpec): MetricCardProps
   const scaled = dv == null ? null : dv / deltaDiv;
 
   let deltaText: string, deltaColor: string, deltaIcon: React.ReactNode;
-  if (m.badBelow != null && raw != null && raw < m.badBelow) {
+  if (raw == null) {
+    [deltaText, deltaColor] = ["no reading", T.FAINT];
+    deltaIcon = <IconMinus size={DELTA_ICON} />;
+  } else if (m.badBelow != null && raw < m.badBelow) {
     // threshold breach outranks the day-to-day delta (traffic-light red)
     [deltaText, deltaColor] = ["below your baseline", T.RED];
     deltaIcon = <IconAlertTriangle size={DELTA_ICON} />;
@@ -92,7 +104,7 @@ function metric(daily: Daily[], range: RangeKey, m: MetricSpec): MetricCardProps
   }
   return {
     label: m.label,
-    value: m.value ?? (raw == null ? "—" : pyFixed(raw, digits)),
+    value: raw == null ? "—" : (m.format ?? ((v) => pyFixed(v, digits)))(raw),
     unit: m.unit,
     deltaText,
     deltaColor,
@@ -118,7 +130,7 @@ function snapshot(daily: Daily[], range: RangeKey): MetricCardProps[] {
     }),
     metric(daily, range, {
       col: "sleep_total_seconds", label: "Sleep", unit: "", icon: <IconMoon size={ICON} />,
-      value: hm(last.sleep_total_seconds), line: T.PURPLE, deltaDiv: 60, deltaUnit: "m",
+      format: hm, line: T.PURPLE, deltaDiv: 60, deltaUnit: "m",
       eps: 2, href: "/sleep",
     }),
     metric(daily, range, {
@@ -150,16 +162,18 @@ function snapshot(daily: Daily[], range: RangeKey): MetricCardProps[] {
 }
 
 export async function TodayView({ range }: { range: RangeKey }) {
-  const { daily: d } = await loadWindow(range);
+  const { daily: inRange } = await loadWindow(range);
+  const d = A.trimBlankTail(inRange);
   if (!d.length) return <EmptyState title="No data yet" />;
 
   const last = d[d.length - 1];
+  const stale = d.length < inRange.length; // newest days are blank: say which day we're showing
   const score = last.training_readiness_score;
   const level = last.training_readiness_level;
   const v = VD.today(d);
 
   const rdy = A.values(d, "training_readiness_score");
-  const delta = rdy.length >= 2 ? rdy[rdy.length - 1] - rdy[rdy.length - 2] : null;
+  const delta = score != null && rdy.length >= 2 ? rdy[rdy.length - 1] - rdy[rdy.length - 2] : null;
   let deltaTxt = "";
   let deltaCol = T.FAINT;
   if (delta != null && Math.round(delta) !== 0) {
@@ -171,6 +185,15 @@ export async function TodayView({ range }: { range: RangeKey }) {
   return (
     <Stack gap="md">
       <Greeting name="Adam" now={new Date()} />
+      {stale && (
+        <Group gap={8} wrap="nowrap">
+          <IconAlertTriangle size={16} color={T.AMBER} style={{ flex: "none" }} />
+          <Text size="sm" c={SUBTLE}>
+            No data from your watch since {dayLabel(last.date)}, so this shows that day.
+            Open Garmin Connect on your phone to upload, and the next sync will fill the gap.
+          </Text>
+        </Group>
+      )}
       <Card>
         {/* `miw` on the detail column makes the Group wrap on phones (ring centred
             on top, drivers full-width below) while staying side by side on wider screens. */}
@@ -189,7 +212,7 @@ export async function TodayView({ range }: { range: RangeKey }) {
         </Group>
       </Card>
       <Panel title="Readiness trend">
-        <ReadinessTrend dates={d.map((r) => r.date)} scores={d.map((r) => r.training_readiness_score)} />
+        <ReadinessTrend dates={inRange.map((r) => r.date)} scores={inRange.map((r) => r.training_readiness_score)} />
       </Panel>
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
         {snapshot(d, range).map((c) => <MetricCard key={c.label} {...c} />)}

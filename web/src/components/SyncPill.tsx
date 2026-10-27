@@ -1,7 +1,7 @@
 import { Group, Text } from "@mantine/core";
 import { IconRefresh } from "@tabler/icons-react";
 
-import { lastSynced } from "@/lib/db";
+import { lastDataDate, lastSynced } from "@/lib/db";
 import * as T from "@/lib/theme";
 
 const FRESH_MS = 36 * 60 * 60 * 1000;
@@ -29,11 +29,25 @@ export function SyncPillView({ label, color }: { label: string; color: string })
   );
 }
 
-/** "Synced 7:05am" (green while fresh, amber once older than 36h). */
+/** 'YYYY-MM-DD' of the day before `at`, local time — the newest day a sync at `at` fetches. */
+function dayBefore(at: Date) {
+  const d = new Date(at);
+  d.setDate(d.getDate() - 1);
+  return d.toLocaleDateString("en-CA");
+}
+
+/**
+ * "Synced 7:05am" (green while fresh, amber once older than 36h), or
+ * "No data since Oct 24" (amber) when the sync ran but the watch hasn't uploaded.
+ */
 export async function SyncPill() {
-  const syncedAt = await lastSynced();
+  const [syncedAt, dataDate] = await Promise.all([lastSynced(), lastDataDate()]);
   if (!syncedAt) return <SyncPillView label="Not synced" color={T.FAINT} />;
 
+  if (dataDate && dataDate < dayBefore(syncedAt)) {
+    const day = new Date(`${dataDate}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return <SyncPillView label={`No data since ${day}`} color={T.AMBER} />;
+  }
   const now = new Date();
   const sameDay = syncedAt.toDateString() === now.toDateString();
   const weekday = syncedAt.toLocaleDateString("en-GB", { weekday: "short" });

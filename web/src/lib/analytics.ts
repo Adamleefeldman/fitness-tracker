@@ -47,6 +47,25 @@ export function sliceWindow(daily: Daily[], activities: Activity[], days: number
 
 // --- series helpers ---
 
+/**
+ * A day "has data" once any of these is filled (mirrors CORE_COLUMNS in
+ * garmin_health/db.py). Days the watch hasn't uploaded yet are stored blank.
+ */
+export const CORE_COLUMNS = [
+  "resting_hr", "steps", "sleep_total_seconds", "hrv_last_night_ms",
+  "bb_high", "stress_avg", "training_readiness_score",
+] as const satisfies (keyof DailyRow)[];
+
+export function hasData(row: DailyRow): boolean {
+  return CORE_COLUMNS.some((c) => row[c] != null);
+}
+
+/** Rows up to and including the last one with data (drops a blank tail). */
+export function trimBlankTail<R extends DailyRow>(daily: R[]): R[] {
+  const i = daily.findLastIndex(hasData);
+  return daily.slice(0, i + 1);
+}
+
 /** Non-null values of one column, oldest → newest. */
 export function values<T>(rows: T[], key: keyof T): number[] {
   return rows.map((r): unknown => r[key]).filter(isNum);

@@ -13,7 +13,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { connection } from "next/server";
 
-import { sliceWindow, withActivityDerived, withDailyDerived } from "@/lib/analytics";
+import { CORE_COLUMNS, sliceWindow, withActivityDerived, withDailyDerived } from "@/lib/analytics";
 import { RANGE_DAYS, type RangeKey } from "@/lib/range";
 import type { Activity, ActivityRow, Daily, DailyRow } from "@/lib/types";
 
@@ -49,6 +49,15 @@ export async function lastSynced(): Promise<Date | null> {
     | { ts: string | null }
     | undefined;
   return row?.ts ? new Date(row.ts) : null;
+}
+
+/** Newest 'YYYY-MM-DD' with any data (blank days the watch hasn't uploaded don't count). */
+export async function lastDataDate(): Promise<string | null> {
+  await connection();
+  const row = getDb()
+    .prepare(`SELECT MAX(date) AS d FROM daily_metrics WHERE COALESCE(${CORE_COLUMNS.join(", ")}) IS NOT NULL`)
+    .get() as { d: string | null } | undefined;
+  return row?.d ?? null;
 }
 
 /** The daily rows and activities inside the selected range. */

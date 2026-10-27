@@ -26,8 +26,8 @@ import * as T from "@/lib/theme";
  * fill that hugs the line rather than dropping to zero.
  */
 export function Vo2maxChart({ dates, vo2 }: { dates: string[]; vo2: (number | null)[] }) {
-  let carry: number | null = null;
-  const filled = vo2.map((v) => (carry = v ?? carry));
+  const filled: (number | null)[] = [];
+  for (const v of vo2) filled.push(v ?? filled.at(-1) ?? null);
   const present = filled.filter((v): v is number => v != null);
   const floor = present.length ? Math.min(...present) - 0.2 : 0;
   const option: ChartOption = {
