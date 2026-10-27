@@ -18,6 +18,12 @@ SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 # Columns that should always take the freshest value rather than COALESCE.
 _ALWAYS_OVERWRITE = {"raw_json", "synced_at"}
 
+# A day "has data" once any of these is filled. Garmin answers with an empty
+# payload for days the watch hasn't uploaded yet; those rows exist but are blank.
+CORE_COLUMNS = ("resting_hr", "steps", "sleep_total_seconds", "hrv_last_night_ms",
+                "bb_high", "stress_avg", "training_readiness_score")
+_HAS_DATA = f"COALESCE({', '.join(CORE_COLUMNS)}) IS NOT NULL"
+
 
 def connect(db_path=None) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path) if db_path is not None else DB_PATH)
@@ -59,11 +65,13 @@ def upsert_activity(conn, row: dict) -> None:
 
 
 def existing_metric_dates(conn) -> set[str]:
-    return {r[0] for r in conn.execute("SELECT date FROM daily_metrics")}
+    """Dates already stored with data (blank days are left for a re-fetch)."""
+    return {r[0] for r in conn.execute(f"SELECT date FROM daily_metrics WHERE {_HAS_DATA}")}
 
 
-def last_metric_date(conn):
-    row = conn.execute("SELECT MAX(date) FROM daily_metrics").fetchone()
+def last_metric_date(conn, *, with_data=False):
+    where = f" WHERE {_HAS_DATA}" if with_data else ""
+    row = conn.execute(f"SELECT MAX(date) FROM daily_metrics{where}").fetchone()
     return row[0] if row and row[0] else None
 
 

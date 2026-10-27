@@ -38,7 +38,7 @@ def today(d):
 
     level = d.iloc[-1].get("training_readiness_level")
     word, phrase = T.friendly_level(level)
-    lvl = (level or "").upper()
+    lvl = T.level_key(level)
     status = ("good" if lvl in ("PRIME", "HIGH", "VERY_HIGH")
               else "caution" if lvl in ("MODERATE", "MAINTAINING")
               else "bad" if lvl in ("LOW", "POOR", "VERY_LOW") else "neutral")

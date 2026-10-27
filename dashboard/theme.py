@@ -63,12 +63,17 @@ _LEVELS = {
 }
 
 
+def level_key(level):
+    """Upper-cased readiness level, or "" when missing (None or a pandas NaN)."""
+    return level.upper() if isinstance(level, str) else ""
+
+
 def friendly_level(level):
-    return _LEVELS.get((level or "").upper(), ((level or "—").title(), ""))
+    return _LEVELS.get(level_key(level), (level.title() if level_key(level) else "—", ""))
 
 
 def color_for_level(level):
-    lvl = (level or "").upper()
+    lvl = level_key(level)
     if lvl in ("PRIME", "HIGH", "VERY_HIGH"):
         return GREEN
     if lvl in ("MODERATE", "MAINTAINING"):

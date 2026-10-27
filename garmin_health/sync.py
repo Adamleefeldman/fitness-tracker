@@ -19,6 +19,7 @@ from garmin_health.util import daterange
 _ACTIVITY_FLOOR = "2008-01-01"  # Garmin Connect predates any consumer watch
 _MAX_RATELIMIT_RETRIES = 3
 _RATELIMIT_BACKOFF_S = 60
+_REFILL_DAYS = 14  # how far back the daily sync re-fetches days stored blank
 
 
 def _safe_call(fn, *args):
@@ -117,11 +118,19 @@ def _fetch_with_backoff(client, cdate, log):
 
 
 def daily_sync(conn, client, *, pause=1.0, log=print):
-    """Fetch yesterday plus any days missing since the last successful sync."""
+    """Fetch yesterday plus any days missing since the last successful sync.
+
+    Also re-fetches trailing days stored blank (the watch hadn't uploaded yet),
+    back to the last day with data but no more than _REFILL_DAYS.
+    """
     last = db.last_metric_date(conn)
     yesterday = date.today() - timedelta(days=1)
     if last:
         start = date.fromisoformat(last)  # re-do last stored day in case it was partial
+        last_data = db.last_metric_date(conn, with_data=True)
+        if last_data:
+            refill = max(date.fromisoformat(last_data), yesterday - timedelta(days=_REFILL_DAYS))
+            start = min(start, refill)
     else:
         log("No data yet — run a backfill first (e.g. `backfill --all`).")
         start = yesterday

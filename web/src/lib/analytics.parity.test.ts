@@ -2,12 +2,16 @@
  * Parity: the TypeScript analytics + verdicts must reproduce the pandas
  * originals on the real garmin.db, across windows sliding over the whole history.
  *
+ * Runs on a temporary copy with blank days appended, so the "watch hasn't
+ * uploaded yet" case is always covered whatever the last sync stored.
+ *
  * Needs ../garmin.db and `uv` (it runs web/scripts/analytics_parity.py).
  * Skipped when the database isn't there.
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import Database from "better-sqlite3";
@@ -19,6 +23,25 @@ import type { ActivityRow, DailyRow } from "./types";
 
 const ROOT = path.resolve(__dirname, "../../..");
 const DB_PATH = process.env.GARMIN_DB_PATH ?? path.join(ROOT, "garmin.db");
+const BLANK_DAYS = 3;
+
+/** Copy of the live DB with BLANK_DAYS empty rows after its last date. */
+function withBlankTail(src: string): string {
+  const copy = path.join(mkdtempSync(path.join(os.tmpdir(), "parity-")), "garmin.db");
+  const live = new Database(src, { readonly: true });
+  live.exec(`VACUUM INTO '${copy}'`);
+  live.close();
+  const db = new Database(copy);
+  const { last } = db.prepare("SELECT MAX(date) AS last FROM daily_metrics").get() as { last: string };
+  const insert = db.prepare("INSERT INTO daily_metrics (date, synced_at) VALUES (?, ?)");
+  for (let i = 1; i <= BLANK_DAYS; i++) {
+    const day = new Date(`${last}T00:00:00Z`);
+    day.setUTCDate(day.getUTCDate() + i);
+    insert.run(day.toISOString().slice(0, 10), new Date().toISOString());
+  }
+  db.close();
+  return copy;
+}
 
 /** Deep-equal with a relative float tolerance; returns the first mismatch path, or null. */
 function diff(py: unknown, ts: unknown, at = "$"): string | null {
@@ -56,15 +79,16 @@ interface Case {
 }
 
 describe.skipIf(!existsSync(DB_PATH))("analytics parity with pandas", () => {
+  const dbPath = withBlankTail(DB_PATH);
   const { cases } = JSON.parse(
     execFileSync("uv", ["run", "python", "web/scripts/analytics_parity.py"], {
       cwd: ROOT,
       maxBuffer: 256 * 1024 * 1024,
-      env: { ...process.env, GARMIN_DB_PATH: DB_PATH },
+      env: { ...process.env, GARMIN_DB_PATH: dbPath },
     }).toString(),
   ) as { cases: Case[] };
 
-  const db = new Database(DB_PATH, { readonly: true });
+  const db = new Database(dbPath, { readonly: true });
   const daily = A.withDailyDerived(
     db.prepare("SELECT * FROM daily_metrics ORDER BY date").all() as DailyRow[],
   );
