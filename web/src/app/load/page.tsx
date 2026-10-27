@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 
-import { PageLoading } from "@/components/PageStub";
+import { PageLoading } from "@/components/widgets";
 import { parseRange } from "@/lib/range";
 import { LoadView } from "@/views/Load";
 

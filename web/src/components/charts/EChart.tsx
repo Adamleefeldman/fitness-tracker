@@ -11,6 +11,7 @@ import {
   GridComponent,
   LegendComponent,
   MarkAreaComponent,
+  MarkLineComponent,
   TooltipComponent,
 } from "echarts/components";
 import * as echarts from "echarts/core";
@@ -21,7 +22,7 @@ import type { ChartOption } from "./theme";
 
 echarts.use([
   LineChart, BarChart, ScatterChart,
-  GridComponent, LegendComponent, TooltipComponent, MarkAreaComponent,
+  GridComponent, LegendComponent, TooltipComponent, MarkAreaComponent, MarkLineComponent,
   SVGRenderer,
 ]);
 

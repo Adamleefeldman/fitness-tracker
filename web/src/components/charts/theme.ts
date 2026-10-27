@@ -13,6 +13,7 @@ import type {
   GridComponentOption,
   LegendComponentOption,
   MarkAreaComponentOption,
+  MarkLineComponentOption,
   TooltipComponentOption,
 } from "echarts/components";
 import { graphic, type ComposeOption } from "echarts/core";
@@ -27,6 +28,7 @@ export type ChartOption = ComposeOption<
   | LegendComponentOption
   | TooltipComponentOption
   | MarkAreaComponentOption
+  | MarkLineComponentOption
 >;
 
 /** One [from, to] pair in a series' markArea.data. */
@@ -155,18 +157,19 @@ interface TooltipRow {
 
 /**
  * Multi-series axis tooltip: a date header, then one "● name  value" row per
- * series (skipping series with no value that day). Values wear text ink; the
- * marker dot carries the series identity.
+ * series (skipping series with no value that day, and helper series named in
+ * `skip`). Values wear text ink; the marker dot carries the series identity.
  */
 export function seriesTooltip(
   format: (value: number, seriesName: string) => string,
   header: (x: string | number) => string = fmtDate,
+  skip: string[] = [],
 ): TooltipComponentOption {
   return axisTooltip((params) => {
     const rows = (Array.isArray(params) ? params : [params]) as TooltipRow[];
     const lines = rows.flatMap((p) => {
       const v = p.value as number | null | undefined;
-      if (v == null || Number.isNaN(v)) return [];
+      if (v == null || Number.isNaN(v) || skip.includes(p.seriesName!)) return [];
       return [`${p.marker}${p.seriesName} <b style="float:right;margin-left:14px">${format(v, p.seriesName!)}</b>`];
     });
     return [header(rows[0].axisValue!), ...lines].join("<br/>");

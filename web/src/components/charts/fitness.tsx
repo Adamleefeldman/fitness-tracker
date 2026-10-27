@@ -15,7 +15,7 @@ import {
   valueAxis,
   type ChartOption,
 } from "./theme";
-import { StackedWeeks, WeeklyBars } from "./weekly";
+import { StackedBars, WeeklyBars } from "./bars";
 
 import { mmss } from "@/lib/format";
 import * as T from "@/lib/theme";
@@ -123,7 +123,7 @@ export function IntensityMixChart({ weeks, easy, moderate, hard }: {
     { name: "moderate", color: T.PURPLE, data: moderate },
     { name: "hard", color: T.ORANGE, data: hard },
   ];
-  return <StackedWeeks weeks={weeks} parts={parts} format={(v) => `${v.toFixed(0)} sessions`} />;
+  return <StackedBars x={weeks} parts={parts} format={(v) => `${v.toFixed(0)} sessions`} />;
 }
 
 /** Weekly running distance. */

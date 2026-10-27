@@ -13,7 +13,7 @@ import {
   zone,
   type ChartOption,
 } from "./theme";
-import { StackedWeeks } from "./weekly";
+import { StackedBars } from "./bars";
 
 import * as T from "@/lib/theme";
 
@@ -137,5 +137,5 @@ export function WeeklyHoursChart({ weeks, types, hours }: {
   weeks: string[]; types: string[]; hours: Record<string, number[]>;
 }) {
   const parts = types.map((t, i) => ({ name: t, color: TYPE_PALETTE[i % TYPE_PALETTE.length], data: hours[t] }));
-  return <StackedWeeks weeks={weeks} parts={parts} format={(v) => `${v.toFixed(1)}h`} />;
+  return <StackedBars x={weeks} parts={parts} format={(v) => `${v.toFixed(1)}h`} />;
 }

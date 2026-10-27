@@ -4,6 +4,7 @@ import {
   Box,
   Center,
   Group,
+  Loader,
   Paper,
   Progress,
   RingProgress,
@@ -185,4 +186,13 @@ export function PageHeader({ title, question, verdict }: { title: string; questi
 /** Two panels side by side on desktop, stacked on phones. */
 export function TwoUp({ children }: { children: ReactNode }) {
   return <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">{children}</SimpleGrid>;
+}
+
+/** Spinner shown while a page's data streams in. */
+export function PageLoading() {
+  return (
+    <Stack align="center" py="xl">
+      <Loader color="vital" size="sm" />
+    </Stack>
+  );
 }
