@@ -7,7 +7,11 @@ The React/Next.js port of the Dash dashboard in `../dashboard/`. It reads
 npm install
 npm run dev        # http://localhost:3000
 npm test           # includes a parity check against the pandas analytics (needs uv + garmin.db)
+npm run smoke      # builds, then requests every page × range and fails on any render error
 ```
+
+Run `npm run smoke` before committing UI changes: type checks and the build
+don't catch render-time errors such as passing a function to a client chart.
 
 Set `GARMIN_DB_PATH` to point at a different database file.
 
@@ -23,4 +27,5 @@ src/lib/format.ts     Python-compatible number formatting for verdict sentences
 src/lib/range.ts    the 30d/90d/1y/All range, carried in ?range=
 src/lib/theme.ts    palette, Mantine theme, status colours (port of dashboard/theme.py)
 scripts/analytics_parity.py  dumps the pandas results the parity test compares against
+scripts/smoke.mjs   the render check behind `npm run smoke`
 ```

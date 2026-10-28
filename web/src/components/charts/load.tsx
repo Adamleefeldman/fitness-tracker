@@ -15,6 +15,7 @@ import {
 } from "./theme";
 import { StackedBars } from "./bars";
 
+import type { ActivityGroup } from "@/lib/analytics";
 import * as T from "@/lib/theme";
 
 type Series = (number | null)[];
@@ -130,12 +131,22 @@ export function StepsChart({ dates, steps, avg7 }: { dates: string[]; steps: Ser
   return <EChart option={option} height={220} />;
 }
 
-const TYPE_PALETTE = [T.GREEN, T.BLUE, T.PURPLE, T.ORANGE, "#E87BA4", T.FAINT];
+/**
+ * Fixed colour per activity group (never by rank, and never the status
+ * green/amber/red). Checked pairwise in OKLab, incl. protan/deutan/tritan
+ * simulation: every pair stays ≥ 10 ΔE apart.
+ */
+const GROUP_COLORS: Record<ActivityGroup, string> = {
+  Running: T.BLUE,
+  HIIT: T.ORANGE,
+  Strength: "#C7B3F5",
+  Other: "#5C6573",
+};
 
-/** Weekly training hours stacked by activity type, biggest type at the bottom. */
-export function WeeklyHoursChart({ weeks, types, hours }: {
-  weeks: string[]; types: string[]; hours: Record<string, number[]>;
+/** Weekly training hours stacked by activity group, in a fixed order. */
+export function WeeklyHoursChart({ weeks, groups, hours }: {
+  weeks: string[]; groups: ActivityGroup[]; hours: Partial<Record<ActivityGroup, number[]>>;
 }) {
-  const parts = types.map((t, i) => ({ name: t, color: TYPE_PALETTE[i % TYPE_PALETTE.length], data: hours[t] }));
+  const parts = groups.map((g) => ({ name: g, color: GROUP_COLORS[g], data: hours[g]! }));
   return <StackedBars x={weeks} parts={parts} format={(v) => `${v.toFixed(1)}h`} />;
 }

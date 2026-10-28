@@ -19,9 +19,7 @@ export async function LoadView({ range }: { range: RangeKey }) {
   const rhr = d.map((r) => r.resting_hr);
   const steps = d.map((r) => r.steps);
 
-  const wk = A.weeklyHoursByType(acts);
-  const total = (t: string) => wk.hours[t].reduce((a, b) => a + b, 0);
-  const types = wk.types.toSorted((a, b) => total(b) - total(a));
+  const wk = A.weeklyHoursByGroup(acts);
 
   return (
     <Stack gap="md">
@@ -39,7 +37,7 @@ export async function LoadView({ range }: { range: RangeKey }) {
       </TwoUp>
       <TwoUp>
         <Panel title="Weekly training hours by type">
-          <WeeklyHoursChart weeks={wk.weeks} types={types} hours={wk.hours} />
+          <WeeklyHoursChart weeks={wk.weeks} groups={wk.groups} hours={wk.hours} />
         </Panel>
         <Panel title="Daily movement (steps)">
           <StepsChart dates={dates} steps={steps} avg7={A.rolling(steps, 7)} />

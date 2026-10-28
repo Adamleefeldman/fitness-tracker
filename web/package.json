@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke": "next build && node scripts/smoke.mjs"
   },
   "dependencies": {
     "@mantine/core": "^9.7.3",

@@ -200,6 +200,38 @@ export function weeklyHoursByType(
 export type Intensity = "easy" | "moderate" | "hard";
 
 /**
+ * Activity groups for the weekly-hours chart. A fixed list (not "top N by
+ * count") so each group keeps its colour and stack position whatever the range.
+ */
+export const ACTIVITY_GROUPS = ["Running", "HIIT", "Strength", "Other"] as const;
+export type ActivityGroup = (typeof ACTIVITY_GROUPS)[number];
+
+const GROUP_OF: Record<string, ActivityGroup> = {
+  running: "Running", treadmill_running: "Running", trail_running: "Running", track_running: "Running",
+  hiit: "HIIT",
+  strength_training: "Strength",
+};
+
+export function activityGroup(type: string | null): ActivityGroup {
+  return GROUP_OF[type ?? ""] ?? "Other";
+}
+
+/** Weekly training hours per activity group; `groups` lists those present, in ACTIVITY_GROUPS order. */
+export function weeklyHoursByGroup(
+  activities: Activity[],
+): { groups: ActivityGroup[]; weeks: string[]; hours: Partial<Record<ActivityGroup, number[]>> } {
+  const acts = activities.filter((a) => a.date != null && isNum(a.duration_s));
+  if (!acts.length) return { groups: [], weeks: [], hours: {} };
+  const { weeks, series } = weeklyByGroup(
+    acts,
+    (a) => weekEnding(a.date!),
+    (a) => activityGroup(a.activity_type),
+    (a) => a.duration_s! / 3600,
+  );
+  return { groups: ACTIVITY_GROUPS.filter((g) => g in series), weeks, hours: series };
+}
+
+/**
  * Sessions per week binned by intensity from Garmin training effect.
  *
  * hard: aerobic TE >= 3.5 or anaerobic TE >= 2.5 (improving / highly improving)

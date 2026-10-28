@@ -26,10 +26,26 @@ function getDb(): Database.Database {
   return db;
 }
 
+/**
+ * Every daily_metrics column, except that raw_json (~16 KB a day of Garmin
+ * payloads) is cut down to the `readiness` part readinessDrivers reads.
+ */
+function dailyColumns(db: Database.Database): string {
+  const cols = (db.pragma("table_info(daily_metrics)") as { name: string }[]).map((c) => c.name);
+  return cols
+    .map((c) =>
+      c === "raw_json"
+        ? "CASE WHEN json_valid(raw_json) THEN json_object('readiness', raw_json -> '$.readiness') END AS raw_json"
+        : c,
+    )
+    .join(", ");
+}
+
 /** All daily_metrics, oldest → newest. */
 export async function loadDaily(): Promise<Daily[]> {
   await connection();
-  const rows = getDb().prepare("SELECT * FROM daily_metrics ORDER BY date").all() as DailyRow[];
+  const db = getDb();
+  const rows = db.prepare(`SELECT ${dailyColumns(db)} FROM daily_metrics ORDER BY date`).all() as DailyRow[];
   return withDailyDerived(rows);
 }
 
