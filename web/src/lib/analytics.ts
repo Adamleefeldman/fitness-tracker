@@ -11,7 +11,7 @@
  * because that's the shape charts consume.
  */
 
-import type { Activity, ActivityRow, Daily, DailyRow } from "./types";
+import type { Activity, ActivityRow, Daily, DailyRow } from "./types.ts";
 
 type Num = number | null;
 

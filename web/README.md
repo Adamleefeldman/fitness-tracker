@@ -20,9 +20,11 @@ Set `GARMIN_DB_PATH` to point at a different database file.
 ```
 src/app/            routes: / (Today), /load, /fitness, /sleep, manifest, icons
 src/components/     AppFrame (shell, nav, range control), SyncPill, Card
-src/lib/db.ts       SQLite loaders (server-only; awaits connection() so reads are per-request)
+src/lib/queries.ts  read-only SQL, shared with the MCP server
+src/lib/db.ts       the app's loaders over queries.ts (awaits connection() so reads are per-request)
 src/lib/analytics.ts  pure analytics (rolling, ACWR, weekly aggregates…)
 src/lib/verdicts.ts   the rule-based verdict for each page
+src/lib/levels.ts     status words and Garmin readiness levels (no UI imports)
 src/lib/fixture.ts    a synthetic garmin.db for tests
 src/lib/__fixtures__/analytics-golden.json  frozen output of the original pandas analytics
 src/lib/format.ts     Python-compatible number formatting for verdict sentences
@@ -35,3 +37,6 @@ scripts/smoke.mjs   the render check behind `npm run smoke`
 pandas/Dash version produced on the synthetic fixture. The Python side is gone,
 so the golden file is frozen: when a change breaks it, fix the TypeScript, or
 edit the expected values by hand if the rule change is deliberate.
+
+Files in `src/lib/` that the MCP server shares import each other with explicit
+`.ts` extensions and no `@/` alias, so plain `node` can run them without a build.
