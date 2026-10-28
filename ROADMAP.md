@@ -36,13 +36,13 @@ once it's worth it (see Phase 6).
 
 | Layer | Choice | Why this one |
 |---|---|---|
-| Language | **Python 3.11+** | You already know some; best ecosystem for this. |
+| Language | **Python 3.12** for the sync, **TypeScript** for the dashboard and MCP server | Python has the Garmin library; TypeScript lets the dashboard and the MCP server share one copy of the analytics and verdicts. |
 | Package/env manager | **`uv`** | Fast, modern Rust-based tool that replaces `pip` + `venv` + `pip-tools`. Manages the virtualenv, a locked dependency file, and even the Python version for you. A good modern skill to build. |
 | Get data | **`python-garminconnect`** | Unofficial but the de-facto standard. Free, pulls everything the Connect app sees. No business approval needed. |
-| Storage | **SQLite** (then DuckDB for analytics) | Zero setup, one file, real SQL to learn. DuckDB later for fast analytical queries. Migrate to Postgres only when going cloud. |
+| Storage | **SQLite** | Zero setup, one file, real SQL to learn. Every query is instant at this size, so no analytics database is needed. Migrate to Postgres only when going cloud. |
 | Automation | **macOS `launchd`** (you're on a Mac) | Native daily scheduler, no extra software. |
 | Dashboard | **Next.js** (React, Mantine, ECharts) | Started in Streamlit, then Dash; moved to Next.js for a phone-friendly app with full control over layout. It reads SQLite directly. |
-| Claude link | **MCP server** (Python, `mcp` / FastMCP) | The "live connection" — Claude queries your data directly. |
+| Claude link | **MCP server** (TypeScript, official MCP SDK) | The "live connection" — Claude queries your data directly, with the same verdicts the dashboard shows. |
 | Hosting (later) | **Fly.io or Railway + Postgres** | Cheap, beginner-friendly always-on hosting when you want 24/7 freshness. |
 
 ### A note on the data source
@@ -135,12 +135,19 @@ one question with a rule-based verdict:
 
 **Goal:** the "live MCP connection" — Claude can query your data directly in chat.
 
-- Build a small **MCP server** in Python that exposes tools over your database, e.g.
-  `get_daily_metrics(start, end)`, `get_activities(type, n)`,
-  `weekly_training_summary()`, `recovery_status()`.
-- Register it with the Claude desktop app.
+**Done:** a TypeScript MCP server in [`web/src/mcp/`](web/README.md#mcp-server),
+registered with Claude Code (`.mcp.json`) and Claude Desktop. It reuses the
+dashboard's analytics and verdicts, so both always agree. Six read-only tools:
+  - `get_overview` — the four verdicts, today's readiness, latest readings, data freshness
+  - `get_daily_metrics` — one row per day for a date range, in readable units
+  - `get_activities` — workouts, filtered by date, group or type
+  - `get_weekly_summary` — training next to recovery, week by week
+  - `explain_verdict` — the numbers and rules behind any verdict
+  - `run_sql` — one read-only `SELECT` for anything else (stopped after 5 s)
 - Now you can ask: *"How did my sleep track with training load over the last 6 weeks?"*
   and Claude answers from your real numbers.
+- It opens the database read-only over stdio, with no network port. What the tools
+  return becomes part of your Claude conversation.
 
 **You'll learn:** what an MCP server is, designing tool interfaces, exposing a backend safely.
 
@@ -157,6 +164,8 @@ one question with a rule-based verdict:
 - Use the MCP tools so Claude builds a plan grounded in *your* load and recovery,
   then re-checks weekly and adjusts (deload if HRV/sleep dip, progress if you're fresh).
 - Optionally write plans back into a `training_plan` table the dashboard displays.
+  That would be the first thing outside the Python sync to write to the database,
+  so keep it to that one table, behind its own MCP tool.
 
 **You'll learn:** translating metrics into decisions, closing the loop between data and action.
 
@@ -166,9 +175,15 @@ one question with a rule-based verdict:
 
 Only worth it once you want 24/7 freshness or access away from your laptop.
 
+- **Add a login to the dashboard first.** It has none, which is fine on your Mac
+  and home Wi-Fi, but a public URL would show your health data to anyone.
 - Migrate SQLite → **Postgres**.
-- Deploy `sync.py` (scheduled) + dashboard to **Fly.io** or **Railway**.
+- Deploy the sync (`garmin_health.cli sync`, scheduled) + dashboard to **Fly.io** or
+  **Railway**. Expect Garmin to challenge or rate-limit logins from cloud servers
+  more than from home.
 - Put auth/secrets in the host's secret store.
+- Move the hard-coded greeting name and time zone into config.
+- For the MCP server, switch from stdio to its HTTP transport with authentication.
 
 **You'll learn:** cloud deployment, managed databases, secret management, environment parity.
 
@@ -198,5 +213,5 @@ Phase 3 the following week (the dashboard), Phases 4–5 after that (Claude inte
 
 ---
 
-*Next step: Phase 0. I can set up the project and write the first working script
-that prints your real Garmin data — just say go.*
+*Where things stand: Phases 0–4 are done. Next is Phase 5 (training programs);
+Phase 6 waits until you want the tool away from your Mac.*

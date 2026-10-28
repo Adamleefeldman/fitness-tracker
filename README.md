@@ -1,11 +1,11 @@
 # Garmin Health
 
 Pull your Garmin Connect data (Forerunner 970) into a local database, keep it
-fresh automatically, explore it in a dashboard, and — in a later phase — query
-it with Claude. Everything runs locally on your Mac; the only data that leaves it is
+fresh automatically, explore it in a dashboard, and query it with Claude. Everything runs locally on your Mac; the only data that leaves it is
 what Claude's MCP tools return when you ask Claude about your data.
 
-**Status:** Phases 0–3 complete — a self-updating local database and a dashboard. See
+**Status:** Phases 0–4 complete — a self-updating local database, a dashboard, and
+Claude connected to your data over MCP. See
 [ROADMAP.md](ROADMAP.md) for the vision and [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
 for the detailed build.
 
@@ -15,7 +15,7 @@ for the detailed build.
                                        ┌──────────────┼──────────────┐
                                   Next.js           MCP server      (your queries)
                                   dashboard         → Claude
-                                  (web/)            (Phase 4)
+                                  (web/)            (web/src/mcp/)
 ```
 
 ## What's built today
@@ -27,6 +27,9 @@ for the detailed build.
   backfill resumes, and a missing metric never erases a previously-good value.
 - **Dashboard** — a Next.js app in [`web/`](web/README.md) with four pages
   (Today, Load, Fitness, Sleep), each answering one question with a verdict.
+- **Claude connection** — an MCP server with six read-only tools, so Claude Code
+  and Claude Desktop can answer questions from your data with the dashboard's
+  own verdicts. See [Ask Claude](#ask-claude).
 - **Daily auto-sync** (optional) — a `launchd` job refreshes yesterday's data
   every morning. See [automation/README.md](automation/README.md).
 
@@ -68,6 +71,29 @@ uv run python -m garmin_health.cli inspect 2026-06-27
 cd web && npm install && npm run dev
 ```
 
+## Ask Claude
+
+The MCP server in `web/src/mcp/` gives Claude six read-only tools: an overview
+with the dashboard's verdicts, daily metrics, activities, a weekly summary, an
+explanation of any verdict, and read-only SQL for everything else.
+
+- **Claude Code:** registered in `.mcp.json`. Start `claude` from the repo root
+  and approve `garmin-health` the first time.
+- **Claude Desktop:** add it under `mcpServers` in
+  `~/Library/Application Support/Claude/claude_desktop_config.json`, then restart
+  the app:
+
+  ```json
+  "garmin-health": {
+    "command": "/opt/homebrew/bin/node",
+    "args": ["/Users/adamfeldman/garmin-health/web/src/mcp/server.ts"]
+  }
+  ```
+
+Then ask things like *"How's my recovery looking?"* or *"How did my sleep track
+with training load over the last 6 weeks?"* Details are in
+[web/README.md](web/README.md#mcp-server).
+
 ## Data model
 
 | Table | Grain | Holds |
@@ -92,7 +118,8 @@ garmin_health/        package
   cli.py              command-line entry point
 hello.py              Phase 0 first contact (first login + 2FA)
 automation/           Phase 2 launchd scheduler + install guide
-web/                  Phase 3 dashboard (Next.js), reads garmin.db
+web/                  Phase 3 dashboard (Next.js) and Phase 4 MCP server, read garmin.db
+.mcp.json             registers the MCP server with Claude Code
 ```
 
 ## Troubleshooting
