@@ -22,9 +22,9 @@ const INSTRUCTIONS = `Garmin health data from the user's Forerunner, synced dail
 Start with get_overview: it gives the dashboard's four verdicts, the latest readings, and whether the
 data is current. If data.watch_not_uploading is true, say so before drawing conclusions about recent days.
 Use explain_verdict when the user asks why a verdict says what it does, and get_weekly_summary for trends
-across weeks (e.g. how sleep tracked with training load). The verdicts are simple published rules
-(acute:chronic load sweet spot 0.8–1.3; resting HR 7-day average 3+ bpm above its 28-day average;
-HRV 7-day average below Garmin's baseline), not medical advice.`;
+across weeks (e.g. how sleep tracked with training load). run_sql answers anything else.
+The verdicts are simple published rules (acute:chronic load sweet spot 0.8–1.3; resting HR 7-day
+average 3+ bpm above its 28-day average; HRV 7-day average below Garmin's baseline), not medical advice.`;
 
 const READ_ONLY = { readOnlyHint: true, openWorldHint: false } as const;
 
@@ -84,6 +84,21 @@ export function buildServer(db: Database.Database, now = () => new Date()): McpS
     inputSchema: T.explainInput,
     annotations: READ_ONLY,
   }, (args) => json(T.explainVerdict(ctx, args)));
+
+  server.registerTool("run_sql", {
+    title: "Run a read-only SQL query",
+    description:
+      "For questions the other tools don't cover (e.g. longest run, best month). One SQLite SELECT or " +
+      "WITH … SELECT; anything that writes is rejected, queries stop after 5 s, and strings are cut to 500 " +
+      "characters. Returns {columns, rows (arrays), truncated}.\n\n" +
+      "Units as stored: dates 'YYYY-MM-DD'; times local 'YYYY-MM-DD HH:MM[:SS]'; sleep_*_seconds and " +
+      "duration_s in seconds; distance_m in metres; avg_pace_s_per_km in seconds per km; weight_g in grams. " +
+      "Blank daily_metrics rows (watch not uploaded) have only date, raw_json and synced_at. raw_json holds " +
+      "Garmin's original payloads; prefer the columns. activities.date is the local day.\n\nTables:\n" +
+      T.schemaSummary(db),
+    inputSchema: T.runSqlInput,
+    annotations: READ_ONLY,
+  }, async (args) => json(await T.runSql(ctx, args)));
 
   return server;
 }

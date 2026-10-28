@@ -34,6 +34,7 @@ src/lib/theme.ts    palette, Mantine theme, status colours
 scripts/smoke.mjs   the render check behind `npm run smoke`
 src/mcp/server.ts   the MCP server: registers the tools (stdio)
 src/mcp/tools.ts    the tools' logic
+src/mcp/sql-runner.ts  runs one run_sql query in its own process, so it can be stopped
 ```
 
 `analytics.golden.test.ts` pins the analytics and verdicts to what the original
@@ -61,11 +62,19 @@ node src/mcp/server.ts     # what Claude starts; you don't normally run it yours
 | `get_activities` | workouts, newest first, filtered by date, group or type |
 | `get_weekly_summary` | per week: training hours, intensity, running km and load ratio next to average readiness, RHR, HRV, sleep |
 | `explain_verdict` | why a verdict says what it does: the numbers, the rules (`RULES` in `verdicts.ts`) and which were met |
+| `run_sql` | anything else: one read-only `SELECT`, at most 500 rows, stopped after 5 s |
 
 It's registered for Claude Code in the repo's `.mcp.json` (approve it the first
 time `claude` starts here) and for Claude Desktop in
 `~/Library/Application Support/Claude/claude_desktop_config.json` under
 `mcpServers`, using absolute paths to `node` and the script (restart Claude
-Desktop after changing it). `src/mcp/server.test.ts` drives the tools through a
-real MCP client over the synthetic fixture; `src/mcp/tools.test.ts` checks that
-every explanation agrees with its verdict across the fixture's whole history.
+Desktop after changing it).
+
+`run_sql` can't write: the connection is read-only with `query_only` on, the
+query is wrapped as a subquery so only `SELECT`/`WITH` parses, and the statement
+must return rows. Each query runs in a child process that is killed after 5 s,
+because a running SQLite query can't be interrupted from JavaScript.
+
+`src/mcp/server.test.ts` drives the tools through a real MCP client over the
+synthetic fixture; `src/mcp/tools.test.ts` checks that every explanation agrees
+with its verdict across the fixture's whole history.

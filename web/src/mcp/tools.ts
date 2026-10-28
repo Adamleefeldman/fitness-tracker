@@ -7,6 +7,9 @@
  * watch didn't record that value.
  */
 
+import { spawn } from "node:child_process";
+import path from "node:path";
+
 import type Database from "better-sqlite3";
 import { z } from "zod";
 
@@ -21,6 +24,8 @@ import * as V from "../lib/verdicts.ts";
 export interface Ctx {
   db: Database.Database;
   now: () => Date;
+  /** run_sql stops a query after this long. */
+  sqlTimeoutMs?: number;
 }
 
 const DAY_MS = 86_400_000;
@@ -435,4 +440,49 @@ export function explainWindow(question: Question, j: Judged) {
     sleep: () => V.sleep(j.win.daily),
   }[question]();
   return { verdict, ...explanation(question, j) };
+}
+
+// --- run_sql ---
+
+const SQL_RUNNER = path.join(import.meta.dirname, "sql-runner.ts");
+
+export const runSqlInput = {
+  sql: z.string().min(1).describe("One SELECT (or WITH … SELECT) statement in SQLite syntax"),
+  max_rows: z.number().int().min(1).max(500).default(100).describe("Most rows to return"),
+};
+
+/** Tables and columns, for run_sql's description, read from the database itself. */
+export function schemaSummary(db: Database.Database): string {
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    .pluck().all() as string[];
+  return tables.map((t) => {
+    const cols = db.pragma(`table_info(${t})`) as { name: string; type: string }[];
+    return `${t}(${cols.map((c) => `${c.name} ${c.type}`.trim()).join(", ")})`;
+  }).join("\n");
+}
+
+export function runSql(ctx: Ctx, { sql, max_rows }: { sql: string; max_rows: number }) {
+  const timeout = ctx.sqlTimeoutMs ?? 5000;
+  return new Promise<{ columns: string[]; rows: unknown[][]; truncated: boolean }>((resolve, reject) => {
+    const child = spawn(process.execPath, [SQL_RUNNER, ctx.db.name], { stdio: ["pipe", "pipe", "pipe"] });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (b) => (out += b));
+    child.stderr.on("data", (b) => (err += b));
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`The query ran longer than ${timeout / 1000}s and was stopped. Narrow it, or add a LIMIT.`));
+    }, timeout);
+    child.on("close", () => {
+      clearTimeout(timer);
+      try {
+        const r = JSON.parse(out);
+        if (r.error) reject(new Error(r.error));
+        else resolve(r);
+      } catch {
+        reject(new Error(`The query runner failed: ${err.trim() || "no output"}`));
+      }
+    });
+    child.stdin.end(JSON.stringify({ sql, maxRows: max_rows }));
+  });
 }

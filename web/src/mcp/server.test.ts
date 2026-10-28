@@ -17,6 +17,7 @@ import * as Q from "../lib/queries";
 import { RANGE_DAYS, RANGES } from "../lib/range";
 import * as V from "../lib/verdicts";
 import { buildServer } from "./server";
+import { runSql } from "./tools";
 
 const file = path.join(mkdtempSync(path.join(os.tmpdir(), "mcp-")), "garmin.db");
 writeFixtureDb(file);
@@ -48,7 +49,7 @@ describe("tools", () => {
   it("are all read-only", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual([
-      "get_overview", "get_daily_metrics", "get_activities", "get_weekly_summary", "explain_verdict",
+      "get_overview", "get_daily_metrics", "get_activities", "get_weekly_summary", "explain_verdict", "run_sql",
     ]);
     for (const t of tools) expect(t.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
   });
@@ -179,5 +180,60 @@ describe("explain_verdict", () => {
 
   it("refuses an unknown question", async () => {
     expect((await call("explain_verdict", { question: "mood" })).error).toBeDefined();
+  });
+});
+
+describe("run_sql", () => {
+  it("lists the schema in its description", async () => {
+    const { tools } = await client.listTools();
+    const d = tools.find((t) => t.name === "run_sql")!.description!;
+    expect(d).toMatch(/daily_metrics\(date TEXT, resting_hr INTEGER/);
+    expect(d).toMatch(/activities\(activity_id INTEGER/);
+  });
+
+  it("returns columns and rows, numbering duplicate column names", async () => {
+    const r = await call("run_sql", {
+      sql: "SELECT a.date, b.date FROM daily_metrics a JOIN daily_metrics b ON b.date = a.date ORDER BY a.date LIMIT 2;",
+    });
+    expect(r).toEqual({ columns: ["date", "date:1"], rows: [["2025-06-01", "2025-06-01"], ["2025-06-02", "2025-06-02"]], truncated: false });
+  });
+
+  it("accepts WITH queries and trailing comments, and flags truncation", async () => {
+    const r = await call("run_sql", {
+      sql: "WITH runs AS (SELECT * FROM activities WHERE activity_type = 'running') SELECT date FROM runs -- all runs",
+      max_rows: 3,
+    });
+    expect(r.rows).toHaveLength(3);
+    expect(r.truncated).toBe(true);
+  });
+
+  it("cuts long strings", async () => {
+    const r = await call("run_sql", { sql: "SELECT printf('%.2000c', 'x') AS long" });
+    expect(r.rows[0][0]).toMatch(/^x{500}… \(2000 chars\)$/);
+  });
+
+  it.each([
+    "DELETE FROM activities",
+    "UPDATE daily_metrics SET steps = 0",
+    "INSERT INTO sync_log (kind) VALUES ('x')",
+    "DROP TABLE activities",
+    "SELECT 1; DELETE FROM activities",
+    "ATTACH DATABASE 'other.db' AS other",
+    "PRAGMA query_only = OFF",
+    "CREATE TEMP TABLE t (x)",
+  ])("refuses to write: %s", async (sql) => {
+    const before = db.prepare("SELECT (SELECT count(*) FROM activities) + (SELECT count(*) FROM sync_log)").pluck().get();
+    const r = await call("run_sql", { sql });
+    expect(r.error).toMatch(/run_sql accepts one SELECT|statement|not allowed|readonly/i);
+    expect(db.prepare("SELECT (SELECT count(*) FROM activities) + (SELECT count(*) FROM sync_log)").pluck().get()).toBe(before);
+  });
+
+  it("stops a runaway query", async () => {
+    const started = Date.now();
+    await expect(runSql({ db, now: () => NOW, sqlTimeoutMs: 1000 }, {
+      sql: "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c",
+      max_rows: 1,
+    })).rejects.toThrow(/longer than 1s/);
+    expect(Date.now() - started).toBeLessThan(3000);
   });
 });
