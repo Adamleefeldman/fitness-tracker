@@ -1,6 +1,5 @@
 /**
- * Rule-based verdicts: each page's plain-English answer to its question
- * (port of dashboard/verdicts.py).
+ * Rule-based verdicts: each page's plain-English answer to its question.
  *
  * Every function takes the *windowed* daily rows (and activities where
  * relevant). The rules are deliberately simple and transparent —

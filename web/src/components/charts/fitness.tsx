@@ -1,6 +1,6 @@
 "use client";
 
-/** Fitness page charts (port of the Fitness section of dashboard/figures.py). */
+/** Fitness page charts. */
 
 import { EChart } from "./EChart";
 import {

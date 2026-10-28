@@ -71,8 +71,8 @@ export interface ActivityRow {
   synced_at: string;
 }
 
-/** A daily row with the conveniences analytics.load_daily adds. */
+/** A daily row with derived conveniences (see analytics.withDailyDerived). */
 export type Daily = DailyRow & { sleep_hours: number | null };
 
-/** An activity row with the conveniences analytics.load_activities adds. */
+/** An activity row with derived conveniences (see analytics.withActivityDerived). */
 export type Activity = ActivityRow & { distance_km: number | null; pace_min_per_km: number | null };

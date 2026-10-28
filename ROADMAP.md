@@ -21,7 +21,7 @@ a useful tool.
         ▼
  SQLite database  (your local "source of truth")
         │
-        ├──────────────► Streamlit dashboard   (charts, trends, recovery)
+        ├──────────────► Next.js dashboard     (charts, trends, recovery)
         │
         └──────────────► MCP server  ───────────► Claude  (chat analysis +
                                                             training programs)
@@ -41,7 +41,7 @@ once it's worth it (see Phase 6).
 | Get data | **`python-garminconnect`** | Unofficial but the de-facto standard. Free, pulls everything the Connect app sees. No business approval needed. |
 | Storage | **SQLite** (then DuckDB for analytics) | Zero setup, one file, real SQL to learn. DuckDB later for fast analytical queries. Migrate to Postgres only when going cloud. |
 | Automation | **macOS `launchd`** (you're on a Mac) | Native daily scheduler, no extra software. |
-| Dashboard | **Streamlit** | Fastest path from Python to a good-looking dashboard. You write Python, it renders interactive charts. |
+| Dashboard | **Next.js** (React, Mantine, ECharts) | Started in Streamlit, then Dash; moved to Next.js for a phone-friendly app with full control over layout. It reads SQLite directly. |
 | Claude link | **MCP server** (Python, `mcp` / FastMCP) | The "live connection" — Claude queries your data directly. |
 | Hosting (later) | **Fly.io or Railway + Postgres** | Cheap, beginner-friendly always-on hosting when you want 24/7 freshness. |
 
@@ -116,12 +116,14 @@ syncs, primary keys.
 
 **Goal:** a visually pleasing local dashboard.
 
-- Build a **Streamlit** app reading straight from SQLite:
-  - Overview: training load, recovery (HRV/Body Battery), sleep, resting HR trends.
-  - Activity explorer: filter runs, pace/HR/distance over time.
-  - "Readiness" panel: simple rules combining sleep + HRV + load.
-- Add charts (line, rolling averages, calendar heatmaps) and clean styling.
-- Add it with `uv add streamlit`, run with `uv run streamlit run app.py` → opens in your browser.
+**Done:** built first in Streamlit, then Dash, and now a **Next.js** app in
+[`web/`](web/README.md) reading straight from SQLite. Four pages, each answering
+one question with a rule-based verdict:
+  - **Today** — train hard today? (Garmin readiness and its weakest factor)
+  - **Load** — am I overtraining? (acute:chronic load, resting-HR creep, HRV)
+  - **Fitness** — am I getting fitter? (VO₂max, running volume, pace)
+  - **Sleep** — is my recovery improving? (score, duration, bedtime regularity)
+- Run it with `cd web && npm run dev` → http://localhost:3000.
 
 **You'll learn:** turning data into interactive visuals, layout/UX, rolling-window stats.
 

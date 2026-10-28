@@ -1,5 +1,5 @@
 /**
- * Palette, Mantine theme and status-colour helpers (port of dashboard/theme.py).
+ * Palette, Mantine theme and status-colour helpers.
  *
  * Colour language (full traffic light):
  *   GREEN = good   AMBER = caution   RED = genuinely bad

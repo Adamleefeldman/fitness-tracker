@@ -1,6 +1,6 @@
 "use client";
 
-/** Sleep & Recovery page charts (port of the Sleep section of dashboard/figures.py). */
+/** Sleep & Recovery page charts. */
 
 import type { BarSeriesOption } from "echarts/charts";
 

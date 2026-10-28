@@ -1,4 +1,4 @@
-/** Reusable dashboard building blocks (port of dashboard/components.py). */
+/** Reusable dashboard building blocks. */
 
 import {
   Box,

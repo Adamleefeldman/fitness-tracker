@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 # SQLite database — your local source of truth (Phase 1+). GARMIN_DB_PATH
-# overrides it (the web app and its parity test read the same variable).
+# overrides it (the web app reads the same variable).
 DB_PATH = Path(os.environ.get("GARMIN_DB_PATH") or ROOT / "garmin.db")
 
 # Where garminconnect caches your login token so you don't re-auth every run.

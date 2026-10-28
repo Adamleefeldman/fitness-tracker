@@ -2,13 +2,6 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "dashboard",
-      "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "python", "-m", "dashboard.app"],
-      "port": 8050,
-      "autoPort": true
-    },
-    {
       "name": "web",
       "cwd": "web",
       "runtimeExecutable": "npm",

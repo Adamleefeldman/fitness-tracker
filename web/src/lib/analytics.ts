@@ -1,9 +1,10 @@
 /**
- * Pure analytics over the Garmin rows — port of garmin_health/analytics.py.
+ * Pure analytics over the Garmin rows.
  *
  * No database or Next.js imports, so it runs anywhere (pages, tests). Every
  * function tolerates missing values (the watch drops metrics some days), and
- * results match the pandas originals — see analytics.parity.test.ts.
+ * results match the pandas originals they were ported from — see
+ * analytics.golden.test.ts.
  *
  * Weekly aggregates follow pandas resample("W"): weeks end on Sunday and are
  * labelled with that Sunday's date. They come back columnar ({weeks, ...arrays})
@@ -16,7 +17,7 @@ type Num = number | null;
 
 const isNum = (v: unknown): v is number => typeof v === "number" && !Number.isNaN(v);
 
-// --- loading conveniences (load_daily / load_activities) ---
+// --- loading conveniences ---
 
 export function withDailyDerived(rows: DailyRow[]): Daily[] {
   return rows.map((r) => ({
@@ -33,7 +34,7 @@ export function withActivityDerived(rows: ActivityRow[]): Activity[] {
   }));
 }
 
-/** The last `days` daily rows (all when null) and the activities inside them (views._slice_*). */
+/** The last `days` daily rows (all when null) and the activities inside them. */
 export function sliceWindow(daily: Daily[], activities: Activity[], days: number | null) {
   const win = days ? daily.slice(-days) : daily;
   if (!win.length) return { daily: win, activities: [] as Activity[] };
@@ -171,30 +172,6 @@ export function weeklyDistance(activities: Activity[]): { weeks: string[]; dista
     (a) => (isNum(a.distance_km) ? a.distance_km : 0),
   );
   return { weeks, distance_km: series.all };
-}
-
-/** Weekly training hours by activity type (top N types + 'other'). */
-export function weeklyHoursByType(
-  activities: Activity[],
-  top = 5,
-): { types: string[]; weeks: string[]; hours: Record<string, number[]> } {
-  const acts = activities.filter((a) => a.date != null && isNum(a.duration_s));
-  if (!acts.length) return { types: [], weeks: [], hours: {} };
-  // value_counts order: count desc, ties in order of first appearance
-  const counts = new Map<string, number>();
-  for (const a of acts) {
-    if (a.activity_type != null) counts.set(a.activity_type, (counts.get(a.activity_type) ?? 0) + 1);
-  }
-  const keep = new Set(
-    [...counts.entries()].sort((x, y) => y[1] - x[1]).slice(0, top).map(([t]) => t),
-  );
-  const { groups, weeks, series } = weeklyByGroup(
-    acts,
-    (a) => weekEnding(a.date!),
-    (a) => (a.activity_type != null && keep.has(a.activity_type) ? a.activity_type : "other"),
-    (a) => a.duration_s! / 3600,
-  );
-  return { types: groups, weeks, hours: series };
 }
 
 export type Intensity = "easy" | "moderate" | "hard";

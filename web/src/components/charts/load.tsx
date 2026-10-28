@@ -1,6 +1,6 @@
 "use client";
 
-/** Load page charts (port of the Load section of dashboard/figures.py). */
+/** Load page charts. */
 
 import { EChart } from "./EChart";
 import {

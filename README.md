@@ -1,10 +1,10 @@
 # Garmin Health
 
 Pull your Garmin Connect data (Forerunner 970) into a local database, keep it
-fresh automatically, and — in later phases — explore it in a dashboard and query
+fresh automatically, explore it in a dashboard, and — in a later phase — query
 it with Claude. Everything runs locally on your Mac; nothing is sent anywhere.
 
-**Status:** Phases 0–2 complete — a self-updating local database. See
+**Status:** Phases 0–3 complete — a self-updating local database and a dashboard. See
 [ROADMAP.md](ROADMAP.md) for the vision and [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
 for the detailed build.
 
@@ -12,9 +12,9 @@ for the detailed build.
  Garmin Connect ──python-garminconnect──> sync ──> SQLite (garmin.db)
                                                       │
                                        ┌──────────────┼──────────────┐
-                                  Streamlit         MCP server      (your queries)
+                                  Next.js           MCP server      (your queries)
                                   dashboard         → Claude
-                                  (Phase 3)         (Phase 4)
+                                  (web/)            (Phase 4)
 ```
 
 ## What's built today
@@ -24,6 +24,8 @@ for the detailed build.
   training load, steps, SpO2…) plus a row per activity (runs, HIIT, etc.).
 - **Idempotent, resumable sync** — re-running never duplicates, an interrupted
   backfill resumes, and a missing metric never erases a previously-good value.
+- **Dashboard** — a Next.js app in [`web/`](web/README.md) with four pages
+  (Today, Load, Fitness, Sleep), each answering one question with a verdict.
 - **Daily auto-sync** (optional) — a `launchd` job refreshes yesterday's data
   every morning. See [automation/README.md](automation/README.md).
 
@@ -60,6 +62,9 @@ uv run python -m garmin_health.cli sync
 
 # Diagnose: print the raw shape of each Garmin endpoint for a date
 uv run python -m garmin_health.cli inspect 2026-06-27
+
+# Dashboard (needs Node.js) → http://localhost:3000
+cd web && npm install && npm run dev
 ```
 
 ## Data model
@@ -84,8 +89,9 @@ garmin_health/        package
   client.py           flattens Garmin JSON → clean rows
   sync.py             backfill + gap-aware daily sync
   cli.py              command-line entry point
-hello.py              Phase 0 throwaway
+hello.py              Phase 0 first contact (first login + 2FA)
 automation/           Phase 2 launchd scheduler + install guide
+web/                  Phase 3 dashboard (Next.js), reads garmin.db
 ```
 
 ## Troubleshooting
