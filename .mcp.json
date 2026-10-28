@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "garmin-health": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "web/src/mcp/server.ts"
+      ],
+      "env": {}
+    }
+  }
+}

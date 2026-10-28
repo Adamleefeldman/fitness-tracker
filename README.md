@@ -2,7 +2,8 @@
 
 Pull your Garmin Connect data (Forerunner 970) into a local database, keep it
 fresh automatically, explore it in a dashboard, and — in a later phase — query
-it with Claude. Everything runs locally on your Mac; nothing is sent anywhere.
+it with Claude. Everything runs locally on your Mac; the only data that leaves it is
+what Claude's MCP tools return when you ask Claude about your data.
 
 **Status:** Phases 0–3 complete — a self-updating local database and a dashboard. See
 [ROADMAP.md](ROADMAP.md) for the vision and [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
@@ -107,4 +108,6 @@ web/                  Phase 3 dashboard (Next.js), reads garmin.db
 ## Security
 
 `.env` (your password), `garmin.db` (your data), and `.garminconnect/` (your
-session token) are all gitignored and never leave your machine.
+session token) are all gitignored and never leave your machine. The MCP server
+(`web/src/mcp/`) opens `garmin.db` read-only and has no network port; what its
+tools return becomes part of your Claude conversation.
