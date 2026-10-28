@@ -5,7 +5,7 @@
  * relevant). Each verdict has an *Inputs function returning the numbers it
  * judges, so they can be shown on their own (the MCP server's
  * explain_verdict). The rules are deliberately simple and transparent —
- * sports-science defaults, no ML:
+ * sports-science defaults, no ML — and their thresholds live in RULES:
  *
  *   ACWR sweet spot 0.8–1.3 (caution to 1.5, bad above)   [training load]
  *   RHR creep: 7-day avg >= 3 bpm above 28-day avg        [overreaching]
@@ -22,6 +22,39 @@ export interface Verdict {
   word: string;
   sentence: string;
 }
+
+/** Every threshold the verdicts use. */
+export const RULES = {
+  today: {
+    /** A readiness factor below this is named as the main limiter. */
+    limiterPct: 60,
+  },
+  load: {
+    /** Acute:chronic workload ratio sweet spot. */
+    sweetSpot: [0.8, 1.3],
+    /** Above this the ratio alone means overreaching. */
+    overreaching: 1.5,
+    /** 7-day resting-HR average this far above the 28-day one is a red flag. */
+    rhrCreepBpm: 3,
+  },
+  fitness: {
+    /** VO₂max change over the range that counts as improving or slipping. */
+    vo2Change: 0.3,
+    /** Running-volume change worth mentioning. */
+    volumeChangePct: 15,
+  },
+  sleep: {
+    /** 7-day sleep score: below `poor` is poor, below `solid` is mixed. */
+    poor: 60,
+    solid: 75,
+    /** Averaging fewer hours than this is an issue. */
+    shortHours: 6.5,
+    /** Bedtimes varying more than this (sd, minutes) is an issue. */
+    bedtimeSdMin: 75,
+    /** Score change on the previous weeks worth mentioning. */
+    trendPts: 2,
+  },
+} as const;
 
 const NO_DATA = (sentence: string): Verdict => ({ status: "neutral", word: "No data", sentence });
 
@@ -64,7 +97,7 @@ export function today(d: Daily[]): Verdict {
   const { level, weakest } = todayInputs(d);
   const [word, phrase] = friendlyLevel(level);
   let sentence = phrase;
-  if (weakest && weakest.pct < 60) {
+  if (weakest && weakest.pct < RULES.today.limiterPct) {
     sentence = `${phrase} — ${weakest.name.toLowerCase()} is the main limiter (${Math.trunc(weakest.pct)}%)`;
   }
   return { status: levelStatus(level), word, sentence };
@@ -108,18 +141,19 @@ export function loadInputs(d: Daily[]): LoadInputs {
 export function load(d: Daily[]): Verdict {
   const { acwr: ratio, rhrCreep: creep, hrvSuppressed: suppressed } = loadInputs(d);
 
+  const { sweetSpot: [lo, hi], overreaching, rhrCreepBpm } = RULES.load;
   const flags: string[] = [];
-  if (creep != null && creep >= 3) flags.push(`resting HR is ${pyFixed(creep)} bpm above your monthly norm`);
+  if (creep != null && creep >= rhrCreepBpm) flags.push(`resting HR is ${pyFixed(creep)} bpm above your monthly norm`);
   if (suppressed) flags.push("HRV is running below baseline");
 
   if (ratio == null) return NO_DATA("Not enough load data in this range.");
   const r = pyFixed(ratio, 2);
   let word: string, status: Status, why: string;
-  if (ratio > 1.5 || (ratio > 1.3 && flags.length)) {
+  if (ratio > overreaching || (ratio > hi && flags.length)) {
     [word, status, why] = ["Overreaching", "bad", `load ratio ${r} is well above the sweet spot`];
-  } else if (ratio > 1.3) {
-    [word, status, why] = ["Ramping fast", "caution", `load ratio ${r} is above the 0.8–1.3 sweet spot`];
-  } else if (ratio < 0.8) {
+  } else if (ratio > hi) {
+    [word, status, why] = ["Ramping fast", "caution", `load ratio ${r} is above the ${lo}–${hi} sweet spot`];
+  } else if (ratio < lo) {
     [word, status, why] = ["Detraining", "caution", `load ratio ${r} — training less than your body is used to`];
   } else if (flags.length) {
     why = `load ratio ${r} is balanced, but ${flags.join(" and ")}`;
@@ -169,15 +203,16 @@ export function fitnessInputs(d: Daily[], acts: Activity[]): FitnessInputs {
 /** Am I getting fitter? VO2max direction + running volume + pace. */
 export function fitness(d: Daily[], acts: Activity[]): Verdict {
   const { vo2Last, vo2Delta, runVolumeChangePct: pct } = fitnessInputs(d, acts);
-  const volNote = pct != null && Math.abs(pct) >= 15
+  const { vo2Change, volumeChangePct } = RULES.fitness;
+  const volNote = pct != null && Math.abs(pct) >= volumeChangePct
     ? `; running volume ${pct > 0 ? "up" : "down"} ${pyFixed(Math.abs(pct))}%`
     : "";
 
   if (vo2Delta == null) return NO_DATA("No VO₂max readings in this range.");
-  if (vo2Delta >= 0.3) {
+  if (vo2Delta >= vo2Change) {
     return { status: "good", word: "Improving", sentence: `VO₂max up ${pyFixed(vo2Delta, 1)} over this range${volNote}` };
   }
-  if (vo2Delta <= -0.3) {
+  if (vo2Delta <= -vo2Change) {
     return { status: "caution", word: "Slipping", sentence: `VO₂max down ${pyFixed(Math.abs(vo2Delta), 1)} over this range${volNote}` };
   }
   return { status: "good", word: "Holding", sentence: `VO₂max steady at ${pyFixed(vo2Last!, 1)}${volNote}` };
@@ -210,21 +245,22 @@ export function sleepInputs(d: Daily[]): SleepInputs {
 /** Is my sleep/recovery improving? Score level+trend, duration, regularity. */
 export function sleep(d: Daily[]): Verdict {
   const { score7, scorePrior, hours7: durH, bedtimeSdMin: bedSdMin } = sleepInputs(d);
+  const R = RULES.sleep;
 
   if (score7 == null) return NO_DATA("No sleep scores in this range.");
 
   let trend = "";
-  if (scorePrior != null && Math.abs(score7 - scorePrior) >= 2) {
+  if (scorePrior != null && Math.abs(score7 - scorePrior) >= R.trendPts) {
     trend = `, ${score7 > scorePrior ? "up" : "down"} ${pyFixed(Math.abs(score7 - scorePrior))} on the previous weeks`;
   }
 
   const issues: string[] = [];
-  if (durH != null && durH < 6.5) issues.push(`averaging only ${pyFixed(durH, 1)}h in bed`);
-  if (bedSdMin != null && bedSdMin > 75) issues.push(`bedtime varies by ±${pyFixed(bedSdMin)} min`);
+  if (durH != null && durH < R.shortHours) issues.push(`averaging only ${pyFixed(durH, 1)}h in bed`);
+  if (bedSdMin != null && bedSdMin > R.bedtimeSdMin) issues.push(`bedtime varies by ±${pyFixed(bedSdMin)} min`);
 
   let status: Status, word: string;
-  if (score7 < 60) [status, word] = ["bad", "Poor"];
-  else if (score7 < 75 || issues.length) [status, word] = ["caution", "Mixed"];
+  if (score7 < R.poor) [status, word] = ["bad", "Poor"];
+  else if (score7 < R.solid || issues.length) [status, word] = ["caution", "Mixed"];
   else [status, word] = ["good", "Solid"];
 
   let sentence = `Sleep score averaging ${pyFixed(score7)} this week${trend}`;

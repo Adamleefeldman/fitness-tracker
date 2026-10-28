@@ -21,8 +21,10 @@ import * as T from "./tools.ts";
 const INSTRUCTIONS = `Garmin health data from the user's Forerunner, synced daily into a local database.
 Start with get_overview: it gives the dashboard's four verdicts, the latest readings, and whether the
 data is current. If data.watch_not_uploading is true, say so before drawing conclusions about recent days.
-The verdicts are simple published rules (acute:chronic load sweet spot 0.8–1.3; resting HR 7-day average
-3+ bpm above its 28-day average; HRV 7-day average below Garmin's baseline), not medical advice.`;
+Use explain_verdict when the user asks why a verdict says what it does, and get_weekly_summary for trends
+across weeks (e.g. how sleep tracked with training load). The verdicts are simple published rules
+(acute:chronic load sweet spot 0.8–1.3; resting HR 7-day average 3+ bpm above its 28-day average;
+HRV 7-day average below Garmin's baseline), not medical advice.`;
 
 const READ_ONLY = { readOnlyHint: true, openWorldHint: false } as const;
 
@@ -62,6 +64,26 @@ export function buildServer(db: Database.Database, now = () => new Date()): McpS
     inputSchema: T.activitiesInput,
     annotations: READ_ONLY,
   }, (args) => json(T.getActivities(ctx, args)));
+
+  server.registerTool("get_weekly_summary", {
+    title: "Weekly summary",
+    description:
+      "One entry per Monday–Sunday week (default 8, at most 104), ending with the week of the newest stored day: " +
+      "training hours by group, sessions by intensity, running km and the load ratio at week end, next to that " +
+      "week's average readiness, resting HR, HRV, sleep, stress, Body Battery and steps. Use it to compare " +
+      "training with recovery over time. days_with_data shows when a week is incomplete.",
+    inputSchema: T.weeklySummaryInput,
+    annotations: READ_ONLY,
+  }, (args) => json(T.getWeeklySummary(ctx, args)));
+
+  server.registerTool("explain_verdict", {
+    title: "Explain a verdict",
+    description:
+      "Why one of the dashboard's verdicts says what it does: the numbers it judged, how its rules combine, and " +
+      "each rule's threshold with the current value and whether it was met.",
+    inputSchema: T.explainInput,
+    annotations: READ_ONLY,
+  }, (args) => json(T.explainVerdict(ctx, args)));
 
   return server;
 }

@@ -59,10 +59,13 @@ node src/mcp/server.ts     # what Claude starts; you don't normally run it yours
 | `get_overview` | the four verdicts, today's readiness, latest readings, and whether the data is current |
 | `get_daily_metrics` | one row per day for a date range, chosen metrics in readable units |
 | `get_activities` | workouts, newest first, filtered by date, group or type |
+| `get_weekly_summary` | per week: training hours, intensity, running km and load ratio next to average readiness, RHR, HRV, sleep |
+| `explain_verdict` | why a verdict says what it does: the numbers, the rules (`RULES` in `verdicts.ts`) and which were met |
 
 It's registered for Claude Code in the repo's `.mcp.json` (approve it the first
 time `claude` starts here) and for Claude Desktop in
 `~/Library/Application Support/Claude/claude_desktop_config.json` under
 `mcpServers`, using absolute paths to `node` and the script (restart Claude
 Desktop after changing it). `src/mcp/server.test.ts` drives the tools through a
-real MCP client over the synthetic fixture.
+real MCP client over the synthetic fixture; `src/mcp/tools.test.ts` checks that
+every explanation agrees with its verdict across the fixture's whole history.

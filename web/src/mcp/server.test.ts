@@ -47,7 +47,9 @@ async function call(name: string, args: Record<string, unknown> = {}) {
 describe("tools", () => {
   it("are all read-only", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(["get_overview", "get_daily_metrics", "get_activities"]);
+    expect(tools.map((t) => t.name)).toEqual([
+      "get_overview", "get_daily_metrics", "get_activities", "get_weekly_summary", "explain_verdict",
+    ]);
     for (const t of tools) expect(t.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
   });
 });
@@ -130,5 +132,52 @@ describe("get_activities", () => {
     const r = await call("get_activities", { type: "runing" });
     expect(r.matched).toBe(0);
     expect(r.known_types).toContain("running");
+  });
+});
+
+describe("get_weekly_summary", () => {
+  it("covers Monday–Sunday weeks up to the newest stored day", async () => {
+    const r = await call("get_weekly_summary", { weeks: 5 });
+    expect(r.weeks).toHaveLength(5);
+    const newest = Q.dailyRows(db).at(-1)!.date;
+    expect(r.weeks.at(-1).week).toBe(`2026-07-20 to ${A.weekEnding(newest)}`);
+    for (const w of r.weeks) {
+      const [start, end] = w.week.split(" to ");
+      expect(new Date(`${start}T00:00:00Z`).getUTCDay()).toBe(1);
+      expect(new Date(`${end}T00:00:00Z`).getUTCDay()).toBe(0);
+    }
+  });
+
+  it("totals each week's training from its activities", async () => {
+    const r = await call("get_weekly_summary", { weeks: 3 });
+    for (const w of r.weeks) {
+      const [start, end] = w.week.split(" to ");
+      const acts = Q.activityRows(db).filter((a) => a.date! >= start && a.date! <= end);
+      const t = w.training;
+      expect(t.sessions).toBe(acts.length);
+      expect(Object.values(t.sessions_by_intensity).reduce((x: number, y) => x + (y as number), 0)).toBe(acts.length);
+      const hours = acts.reduce((h, a) => h + (a.duration_s ?? 0) / 3600, 0);
+      expect(t.hours).toBeCloseTo(hours, 1);
+    }
+  });
+
+  it("shows when a week is incomplete", async () => {
+    const r = await call("get_weekly_summary", { weeks: 1 });
+    // the fixture's last week ends in three blank days
+    expect(r.weeks[0].days_with_data).toBe(4);
+  });
+});
+
+describe("explain_verdict", () => {
+  it.each(RANGES)("explains the same verdict get_overview gives (%s)", async (range) => {
+    const o = await call("get_overview", { range });
+    for (const q of ["today", "load", "fitness", "sleep"]) {
+      const e = await call("explain_verdict", { question: q, range });
+      expect(e.verdict).toEqual({ status: o.verdicts[q].status, word: o.verdicts[q].word, sentence: o.verdicts[q].sentence });
+    }
+  });
+
+  it("refuses an unknown question", async () => {
+    expect((await call("explain_verdict", { question: "mood" })).error).toBeDefined();
   });
 });
