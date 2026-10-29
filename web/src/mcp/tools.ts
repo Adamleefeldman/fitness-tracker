@@ -444,7 +444,8 @@ export function explainWindow(question: Question, j: Judged) {
 
 // --- run_sql ---
 
-const SQL_RUNNER = path.join(import.meta.dirname, "sql-runner.ts");
+// resolved on use: bundlers (the app imports this module too) leave import.meta.dirname unset
+const sqlRunner = () => path.join(import.meta.dirname, "sql-runner.ts");
 
 export const runSqlInput = {
   sql: z.string().min(1).describe("One SELECT (or WITH … SELECT) statement in SQLite syntax"),
@@ -464,7 +465,7 @@ export function schemaSummary(db: Database.Database): string {
 export function runSql(ctx: Ctx, { sql, max_rows }: { sql: string; max_rows: number }) {
   const timeout = ctx.sqlTimeoutMs ?? 5000;
   return new Promise<{ columns: string[]; rows: unknown[][]; truncated: boolean }>((resolve, reject) => {
-    const child = spawn(process.execPath, [SQL_RUNNER, ctx.db.name], { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [sqlRunner(), ctx.db.name], { stdio: ["pipe", "pipe", "pipe"] });
     let out = "";
     let err = "";
     child.stdout.on("data", (b) => (out += b));

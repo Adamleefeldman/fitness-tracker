@@ -15,7 +15,7 @@ import { buildProfile, localToday } from "@/lib/plans/profile";
 import { planView } from "@/lib/plans/service";
 import { openPlans } from "@/lib/plans/store";
 
-const PLANS_PATH = process.env.PLANS_DB_PATH ?? path.join(path.dirname(DB_PATH), "plans.db");
+export const PLANS_PATH = process.env.PLANS_DB_PATH ?? path.join(path.dirname(DB_PATH), "plans.db");
 
 /** The Garmin rows a plan is built and judged from. */
 export async function loadGarmin() {

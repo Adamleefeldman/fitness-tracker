@@ -12,6 +12,7 @@
     "smoke": "next build && node scripts/smoke.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.134.0",
     "@mantine/core": "^9.7.3",
     "@mantine/hooks": "^9.7.3",
     "@modelcontextprotocol/sdk": "^1.32.1",
