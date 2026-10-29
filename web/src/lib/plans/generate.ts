@@ -790,6 +790,16 @@ function explain(input: PlanInput, p: Profile, x: {
   if (input.goal === "hyrox") {
     out.push("HYROX runs use threshold pace + 15 s/km; a full race simulation comes 2–3 weeks before the race." +
       (input.daysPerWeek <= 4 ? " With 4 or fewer days, station work rides along with strength." : ""));
+    if (x.target && p.paces) {
+      // the 8 km of running is typically a bit under half of a HYROX finish time
+      const needed = (x.target * 0.45) / 8;
+      const current = p.paces.threshold + 15;
+      out.push(current <= needed
+        ? `${input.targetTime} needs runs around ${formatPace(needed)}; your HYROX run pace (${formatPace(current)}) already ` +
+          "supports that, so the stations are where the time is won."
+        : `${input.targetTime} needs runs around ${formatPace(needed)}, faster than your HYROX run pace today ` +
+          `(${formatPace(current)}), so the run intervals and compromised running carry that gap.`);
+    }
   }
   for (const e of input.otherEvents ?? []) {
     if (e.date >= x.start && e.date < x.end) {

@@ -7,11 +7,15 @@
  * function from a Server Component to a Client Component. Those still answer
  * 200, because the page shell streams before the failing part, so this also
  * fails on anything the server logs as an error and on pages whose content
- * never replaced the loading fallback.
+ * never rendered as HTML (only inside the page's script data).
+ *
+ * The Plan page is checked twice against a throwaway plans.db: with no plan
+ * (the form), then with one built from the real Garmin data.
  */
 
 import { spawn } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync } from "node:fs";
+import os from "node:os";
 import { createServer } from "node:net";
 import path from "node:path";
 
@@ -54,27 +58,48 @@ async function waitUntilUp(base, server) {
 
 const port = await freePort();
 const base = `http://localhost:${port}`;
-const server = spawn("npx", ["next", "start", "-p", String(port)], { cwd: WEB, env: process.env });
+const plansFile = path.join(mkdtempSync(path.join(os.tmpdir(), "smoke-")), "plans.db");
+const server = spawn("npx", ["next", "start", "-p", String(port)], { cwd: WEB, env: { ...process.env, PLANS_DB_PATH: plansFile } });
 let log = "";
 server.stdout.on("data", (b) => (log += b));
 server.stderr.on("data", (b) => (log += b));
 
 const failures = [];
 let checked = 0;
+
+/** Request `url` and check it rendered: 200, nothing threw, and `marker` in the HTML outside scripts. */
+async function check(url, marker = "panel-card") {
+  const res = await fetch(base + url);
+  const html = (await res.text()).replace(/<script[\s\S]*?<\/script>/g, "");
+  checked++;
+  if (res.status !== 200) failures.push(`${url}: HTTP ${res.status}`);
+  else if (html.includes("data-dgst")) failures.push(`${url}: a component threw while rendering`);
+  else if (!html.includes(marker)) failures.push(`${url}: "${marker}" never rendered as HTML`);
+}
+
+/** Build a plan into the throwaway plans.db from the real Garmin data. */
+async function createPlan() {
+  const Q = await import("../src/lib/queries.ts");
+  const St = await import("../src/lib/plans/store.ts");
+  const Sv = await import("../src/lib/plans/service.ts");
+  const garmin = Q.openReadOnly(process.env.GARMIN_DB_PATH ?? path.resolve(WEB, "..", "garmin.db"));
+  const db = St.openPlans(plansFile, { create: true });
+  const now = new Date();
+  const event = new Date(now.getTime() + 12 * 7 * 86_400_000).toLocaleDateString("en-CA");
+  Sv.createPlan(db, { daily: Q.dailyRows(garmin), activities: Q.activityRows(garmin) },
+    { goal: "half_marathon", name: "Smoke Half", eventDate: event, daysPerWeek: 5 }, now);
+  db.close();
+  garmin.close();
+}
 try {
   await waitUntilUp(base, server);
 
   for (const route of pageRoutes()) {
-    for (const range of RANGES) {
-      const url = `${route}?range=${range}`;
-      const res = await fetch(base + url);
-      const html = await res.text();
-      checked++;
-      if (res.status !== 200) failures.push(`${url}: HTTP ${res.status}`);
-      else if (html.includes("data-dgst")) failures.push(`${url}: a component threw while rendering`);
-      else if (!html.includes("panel-card")) failures.push(`${url}: content never replaced the loading fallback`);
-    }
+    for (const range of RANGES) await check(`${route}?range=${range}`);
   }
+  await check("/plan", "Build a training plan");
+  await createPlan();
+  await check("/plan", "Why the plan looks like this");
 
   for (const [from, to] of Object.entries(REDIRECTS)) {
     const res = await fetch(base + from, { redirect: "manual" });

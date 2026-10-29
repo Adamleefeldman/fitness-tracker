@@ -112,7 +112,8 @@ export function AppFrame({ syncPill, children }: { syncPill: ReactNode; children
         <Group h="100%" px="md" gap="sm">
           <Brand />
           <Box style={{ flex: 1 }} />
-          <WithRange>{(range) => <RangeControl range={range} />}</WithRange>
+          {/* the plan has its own dates; the range doesn't apply */}
+          {active !== "/plan" && <WithRange>{(range) => <RangeControl range={range} />}</WithRange>}
           <Box visibleFrom="sm">{syncPill}</Box>
         </Group>
       </AppShell.Header>

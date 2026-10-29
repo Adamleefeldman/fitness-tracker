@@ -18,7 +18,7 @@ import * as Q from "@/lib/queries";
 import { RANGE_DAYS, type RangeKey } from "@/lib/range";
 import type { Activity, Daily } from "@/lib/types";
 
-const DB_PATH = process.env.GARMIN_DB_PATH ?? path.resolve(process.cwd(), "..", "garmin.db");
+export const DB_PATH = process.env.GARMIN_DB_PATH ?? path.resolve(process.cwd(), "..", "garmin.db");
 
 let db: Database.Database | undefined;
 

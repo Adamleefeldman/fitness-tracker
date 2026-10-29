@@ -159,13 +159,18 @@ dashboard's analytics and verdicts, so both always agree. Six read-only tools:
 
 **Goal:** Claude generates and adapts plans from your data.
 
-- Define your inputs: goal race/distance, weekly availability, current VO2max,
-  recent volume, recovery trends.
-- Use the MCP tools so Claude builds a plan grounded in *your* load and recovery,
-  then re-checks weekly and adjusts (deload if HRV/sleep dip, progress if you're fresh).
-- Optionally write plans back into a `training_plan` table the dashboard displays.
-  That would be the first thing outside the Python sync to write to the database,
-  so keep it to that one table, behind its own MCP tool.
+**Done:** a rule-based plan engine in [`web/src/lib/plans/`](web/README.md#training-plans),
+used by both the dashboard's **Plan** page and six MCP tools.
+- Inputs: the goal (5K, 10K, half, marathon, HYROX, CrossFit, general fitness), the
+  event date and tune-up events, target time, days per week, long-session day.
+- Personalised from the data: starting volume from the last 4–12 weeks, the body's
+  state now (readiness, load ratio, resting HR, HRV, sleep), paces from VO₂max.
+- Periodised base → build → peak → taper, ≤ 10% weekly growth, a deload every 4th
+  week, hard days never back to back; HYROX gets compromised running, station work
+  and race simulations, CrossFit metcons, strength and engine work.
+- Closes the loop: Garmin activities are matched to planned sessions, and the next
+  days ease off when the body says so (and go back when it recovers).
+- Plans live in their own `plans.db`, so `garmin.db` keeps the sync as its only writer.
 
 **You'll learn:** translating metrics into decisions, closing the loop between data and action.
 
@@ -213,5 +218,5 @@ Phase 3 the following week (the dashboard), Phases 4–5 after that (Claude inte
 
 ---
 
-*Where things stand: Phases 0–4 are done. Next is Phase 5 (training programs);
-Phase 6 waits until you want the tool away from your Mac.*
+*Where things stand: Phases 0–5 are done. Phase 6 waits until you want the tool
+away from your Mac.*

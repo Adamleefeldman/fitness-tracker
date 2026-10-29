@@ -4,8 +4,8 @@ Pull your Garmin Connect data (Forerunner 970) into a local database, keep it
 fresh automatically, explore it in a dashboard, and query it with Claude. Everything runs locally on your Mac; the only data that leaves it is
 what Claude's MCP tools return when you ask Claude about your data.
 
-**Status:** Phases 0–4 complete — a self-updating local database, a dashboard, and
-Claude connected to your data over MCP. See
+**Status:** Phases 0–5 complete — a self-updating local database, a dashboard,
+Claude connected to your data over MCP, and training plans personalised from it. See
 [ROADMAP.md](ROADMAP.md) for the vision and [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
 for the detailed build.
 
@@ -27,9 +27,14 @@ for the detailed build.
   backfill resumes, and a missing metric never erases a previously-good value.
 - **Dashboard** — a Next.js app in [`web/`](web/README.md) with four pages
   (Today, Load, Fitness, Sleep), each answering one question with a verdict.
-- **Claude connection** — an MCP server with six read-only tools, so Claude Code
-  and Claude Desktop can answer questions from your data with the dashboard's
-  own verdicts. See [Ask Claude](#ask-claude).
+- **Claude connection** — an MCP server, so Claude Code and Claude Desktop can
+  answer questions from your data with the dashboard's own verdicts, and build
+  and manage training plans. See [Ask Claude](#ask-claude).
+- **Training plans** — periodised plans for 5K, 10K, half marathon, marathon,
+  HYROX, CrossFit or general fitness, built from your goal, event dates and the
+  days you can train, and personalised from your Garmin history and current
+  state. Create one on the dashboard's Plan page or with Claude. See
+  [Training plans](#training-plans).
 - **Daily auto-sync** (optional) — a `launchd` job refreshes yesterday's data
   every morning. See [automation/README.md](automation/README.md).
 
@@ -73,9 +78,10 @@ cd web && npm install && npm run dev
 
 ## Ask Claude
 
-The MCP server in `web/src/mcp/` gives Claude six read-only tools: an overview
-with the dashboard's verdicts, daily metrics, activities, a weekly summary, an
-explanation of any verdict, and read-only SQL for everything else.
+The MCP server in `web/src/mcp/` gives Claude six read-only tools over your data
+(an overview with the dashboard's verdicts, daily metrics, activities, a weekly
+summary, an explanation of any verdict, and read-only SQL) plus six for training
+plans (see below).
 
 - **Claude Code:** registered in `.mcp.json`. Start `claude` from the repo root
   and approve `garmin-health` the first time.
@@ -93,6 +99,40 @@ explanation of any verdict, and read-only SQL for everything else.
 Then ask things like *"How's my recovery looking?"* or *"How did my sleep track
 with training load over the last 6 weeks?"* Details are in
 [web/README.md](web/README.md#mcp-server).
+
+## Training plans
+
+Tell it the goal (5K, 10K, half marathon, marathon, HYROX, CrossFit or general
+fitness), the event date and any tune-up events, a target time if you have one,
+how many days a week you can train and which day suits the long session. It
+builds a periodised plan (base → build → peak → taper) from your data:
+
+- **Starting point** — your last 4–12 weeks of training (minutes, sessions,
+  running km, longest run, activity mix), and lighter for the first week when
+  your body state says *caution* or *recover* (readiness, load ratio, resting HR,
+  HRV, sleep: the dashboard's own rules).
+- **Progression** — at most 8% more a week (running km 10%), every 4th week lighter,
+  a taper into the event, and no hard days back to back.
+- **Paces** — from your Garmin VO₂max (Daniels' VDOT model); a target time is
+  judged against what your VO₂max predicts.
+- **Day to day** — sessions are matched to your Garmin activities (done or
+  missed), and when your state slips the next days can be eased, then put back
+  once the warning signs clear.
+- **Why** — every plan comes with plain-English notes on the choices it made.
+
+Two ways to use it:
+
+- **Dashboard → Plan:** fill in the form, then see today's session, this week
+  and next, the phases to your event, planned vs done volume, and the reasons.
+  Today's session also shows on the Today page.
+- **Claude:** *"Build me a 16-week plan for the Berlin Half on 14 March, 5 days a
+  week, aiming for 1:40"*, then *"Move Thursday's run to Friday"* or *"I slept
+  badly, adjust this week"*. Claude uses `get_training_profile`,
+  `create_training_plan`, `get_training_plan`, `edit_training_sessions`,
+  `adapt_training_plan` and `archive_training_plan`.
+
+Plans live in `plans.db` next to `garmin.db` (gitignored), so the sync stays the
+only writer of your Garmin data.
 
 ## Data model
 
@@ -118,7 +158,7 @@ garmin_health/        package
   cli.py              command-line entry point
 hello.py              Phase 0 first contact (first login + 2FA)
 automation/           Phase 2 launchd scheduler + install guide
-web/                  Phase 3 dashboard (Next.js) and Phase 4 MCP server, read garmin.db
+web/                  Phase 3 dashboard (Next.js), Phase 4 MCP server, Phase 5 training plans
 .mcp.json             registers the MCP server with Claude Code
 ```
 
@@ -134,7 +174,9 @@ web/                  Phase 3 dashboard (Next.js) and Phase 4 MCP server, read g
 
 ## Security
 
-`.env` (your password), `garmin.db` (your data), and `.garminconnect/` (your
-session token) are all gitignored and never leave your machine. The MCP server
-(`web/src/mcp/`) opens `garmin.db` read-only and has no network port; what its
-tools return becomes part of your Claude conversation.
+`.env` (your password), `garmin.db` and `plans.db` (your data), and
+`.garminconnect/` (your session token) are all gitignored and never leave your
+machine. The MCP server (`web/src/mcp/`) opens `garmin.db` read-only, writes only
+to `plans.db`, and has no network port; what its tools return becomes part of
+your Claude conversation. The dashboard has no login: keep it on your Mac or home
+network.

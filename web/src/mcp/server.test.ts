@@ -29,7 +29,7 @@ const client = new Client({ name: "test", version: "0" });
 
 beforeAll(async () => {
   const [a, b] = InMemoryTransport.createLinkedPair();
-  await buildServer(db, () => NOW).connect(a);
+  await buildServer(db, path.join(path.dirname(file), "plans.db"), () => NOW).connect(a);
   await client.connect(b);
 });
 
@@ -46,12 +46,18 @@ async function call(name: string, args: Record<string, unknown> = {}) {
 }
 
 describe("tools", () => {
-  it("are all read-only", async () => {
+  it("are read-only, except the plan tools that write to plans.db", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual([
       "get_overview", "get_daily_metrics", "get_activities", "get_weekly_summary", "explain_verdict", "run_sql",
+      "get_training_profile", "create_training_plan", "get_training_plan", "adapt_training_plan",
+      "edit_training_sessions", "archive_training_plan",
     ]);
-    for (const t of tools) expect(t.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+    const writes = ["create_training_plan", "adapt_training_plan", "edit_training_sessions", "archive_training_plan"];
+    for (const t of tools) {
+      expect(t.annotations).toMatchObject({ readOnlyHint: !writes.includes(t.name), openWorldHint: false });
+      if (writes.includes(t.name)) expect(t.annotations?.destructiveHint).toBe(false);
+    }
   });
 });
 

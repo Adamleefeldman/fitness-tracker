@@ -24,6 +24,7 @@ import {
 } from "@tabler/icons-react";
 
 import { Card } from "@/components/Card";
+import { PlanToday } from "@/components/PlanToday";
 import { ReadinessTrend } from "@/components/charts/ReadinessTrend";
 import {
   DriverBars,
@@ -37,6 +38,7 @@ import {
 } from "@/components/widgets";
 import * as A from "@/lib/analytics";
 import { loadWindow } from "@/lib/db";
+import { loadPlanPage } from "@/lib/plans-db";
 import { pyFixed } from "@/lib/format";
 import { withRange, type RangeKey } from "@/lib/range";
 import * as T from "@/lib/theme";
@@ -162,7 +164,7 @@ function snapshot(daily: Daily[], range: RangeKey): MetricCardProps[] {
 }
 
 export async function TodayView({ range }: { range: RangeKey }) {
-  const { daily: inRange } = await loadWindow(range);
+  const [{ daily: inRange }, { view: plan }] = await Promise.all([loadWindow(range), loadPlanPage()]);
   const d = A.trimBlankTail(inRange);
   if (!d.length) return <EmptyState title="No data yet" />;
 
@@ -211,6 +213,7 @@ export async function TodayView({ range }: { range: RangeKey }) {
           </Stack>
         </Group>
       </Card>
+      {plan && <PlanToday view={plan} />}
       <Panel title="Readiness trend">
         <ReadinessTrend dates={inRange.map((r) => r.date)} scores={inRange.map((r) => r.training_readiness_score)} />
       </Panel>
