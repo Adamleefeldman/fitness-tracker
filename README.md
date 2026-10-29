@@ -33,7 +33,9 @@ for the detailed build.
 - **Training plans** — periodised plans for 5K, 10K, half marathon, marathon,
   HYROX, CrossFit or general fitness, built from your goal, event dates and the
   days you can train, and personalised from your Garmin history and current
-  state. Create one on the dashboard's Plan page or with Claude. See
+  state. Create one on the dashboard's Plan page or with Claude. Every session
+  opens into its workout (sets, reps, targets, rest), and the Plan page has a
+  chat for questions about the plan (needs an Anthropic API key). See
   [Training plans](#training-plans).
 - **Daily auto-sync** (optional) — a `launchd` job refreshes yesterday's data
   every morning. See [automation/README.md](automation/README.md).
@@ -122,9 +124,14 @@ builds a periodised plan (base → build → peak → taper) from your data:
 
 Two ways to use it:
 
-- **Dashboard → Plan:** fill in the form, then see today's session, this week
-  and next, the phases to your event, planned vs done volume, and the reasons.
-  Today's session also shows on the Today page.
+- **Dashboard → Plan:** fill in the form, then see today's workout and this
+  week and next; tap a session to open its workout (warm-up, main set,
+  cool-down: sets × reps, target pace or load, rest). Ask the chat things like
+  *"what's my next hard session?"* (it reads the plan, it doesn't change it; it
+  needs `ANTHROPIC_API_KEY` in `web/.env.local`, see
+  [web/README.md](web/README.md#the-plan-pages-chat)). The phases, planned vs
+  done volume and the reasons sit under *Plan details*. Today's session also
+  shows on the Today page.
 - **Claude:** *"Build me a 16-week plan for the Berlin Half on 14 March, 5 days a
   week, aiming for 1:40"*, then *"Move Thursday's run to Friday"* or *"I slept
   badly, adjust this week"*. Claude uses `get_training_profile`,

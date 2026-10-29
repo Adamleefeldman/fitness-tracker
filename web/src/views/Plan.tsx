@@ -2,21 +2,27 @@
  * Plan — "What's my next session?"
  *
  * Without a plan: the form, next to what the plan will be built from (the
- * Garmin profile and body state). With one: today's session in the light of
- * the body's state (and the adaptation it suggests), this week and next
- * against what was done, the phases to the event, planned vs done volume, and
- * the reasons the plan looks the way it does.
+ * Garmin profile and body state). With one, kept lean: today's workout in the
+ * light of the body's state (and the adaptation it suggests), then this week
+ * and next, each session opening into its workout (sets, reps, targets, rest).
+ * The phases to the event, planned vs done volume and the reasons behind the
+ * plan sit in a collapsed "Plan details". Beside the sessions (below them on
+ * phones), a chat answers questions about the plan (components/PlanChat).
+ *
+ * Expanding uses <details>, so it works from this server component with no JS.
  */
 
 import { Badge, Box, Group, List, ListItem, SimpleGrid, Stack, Text } from "@mantine/core";
 import {
-  IconAdjustments, IconCircle, IconCircleCheck, IconCircleDot, IconCircleX, IconFlag, IconPlayerSkipForward,
+  IconAdjustments, IconChevronRight, IconCircle, IconCircleCheck, IconCircleDot, IconCircleX, IconFlag,
+  IconPlayerSkipForward,
 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 
 import { adaptPlanAction, archivePlanAction, markSessionAction } from "@/app/plan/actions";
 import { Card } from "@/components/Card";
 import { PlanVolumeChart } from "@/components/charts/plan";
+import { PlanChat } from "@/components/PlanChat";
 import { PlanForm } from "@/components/PlanForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PageHeader, Panel, SUBTLE, TwoUp } from "@/components/widgets";
@@ -25,7 +31,7 @@ import type { Tracked } from "@/lib/plans/adapt";
 import { formatDuration, formatPace } from "@/lib/plans/paces";
 import { addDays, daysBetween } from "@/lib/plans/profile";
 import type { PlanView as View } from "@/lib/plans/service";
-import { GOAL_LABELS, type BodyState, type Intensity, type Phase, type Profile } from "@/lib/plans/types";
+import { GOAL_LABELS, type Block, type BodyState, type Intensity, type Phase, type Profile } from "@/lib/plans/types";
 import * as T from "@/lib/theme";
 
 const QUESTION = "What's my next session?";
@@ -80,22 +86,35 @@ export async function PlanView() {
   return (
     <Stack gap="md">
       <PageHeader title="Plan" question={QUESTION} verdict={view.verdict} />
-      <TwoUp>
-        <TodayCard view={view} />
-        <TimelineCard view={view} />
-      </TwoUp>
-      <TwoUp>
-        <WeekCard title="This week" sessions={view.thisWeek} today={view.today} />
-        <WeekCard title="Next week" sessions={nextWeek} today={view.today} />
-      </TwoUp>
-      <Panel title="Weekly training: planned vs done">
-        <PlanVolumeChart
-          weeks={weekEnds}
-          planned={view.weeks.map((w) => w.plannedMin)}
-          done={view.weeks.map((w) => (w.start <= view.today ? w.doneMin : null))}
-        />
-      </Panel>
-      <WhyCard view={view} />
+      <div className="plan-grid">
+        <Stack gap="md" style={{ minWidth: 0 }}>
+          <TodayCard view={view} />
+          <WeeksCard weeks={[["This week", view.thisWeek], ["Next week", nextWeek]]} today={view.today} />
+        </Stack>
+        <div className="plan-chat-col">
+          <PlanChat />
+        </div>
+      </div>
+      <details className="plan-more">
+        <summary>
+          <IconChevronRight size={16} className="chevron" />
+          <Text span size="sm" c={SUBTLE}>Plan details</Text>
+          <Text span size="xs" c={T.FAINT} visibleFrom="sm">phases, weekly volume, why it looks like this</Text>
+        </summary>
+        <Stack gap="md" mt="sm">
+          <TwoUp>
+            <TimelineCard view={view} />
+            <Panel title="Weekly training: planned vs done">
+              <PlanVolumeChart
+                weeks={weekEnds}
+                planned={view.weeks.map((w) => w.plannedMin)}
+                done={view.weeks.map((w) => (w.start <= view.today ? w.doneMin : null))}
+              />
+            </Panel>
+          </TwoUp>
+          <WhyCard view={view} />
+        </Stack>
+      </details>
     </Stack>
   );
 }
@@ -125,9 +144,59 @@ function SessionBlock({ s }: { s: Tracked }) {
         <Badge variant="light" color="gray" size="sm">{s.intensity}</Badge>
       </Group>
       <Text size="sm" c={T.MUTED} className="num">{size(s)}</Text>
-      <Text size="sm" c={SUBTLE}>{s.description}</Text>
-      {/* an adapted session's reason is already in its description */}
+      <SessionDetail s={s} />
+    </Stack>
+  );
+}
+
+/** The workout in detail, or its description when it has none (hand-written sessions). */
+function SessionDetail({ s }: { s: Tracked }) {
+  return (
+    <Stack gap="xs">
+      {s.source === "adapt" && s.note && <Text size="xs" c={T.AMBER}>Adapted: {s.note}</Text>}
       {s.note && s.source === "edit" && <Text size="xs" c={T.FAINT}>Note: {s.note}</Text>}
+      {s.blocks?.length ? <Workout blocks={s.blocks} /> : <Text size="sm" c={SUBTLE}>{s.description}</Text>}
+      {s.outcome === "done" && s.activity && (
+        <Text size="xs" c={T.GREEN}>
+          Done: {s.activity.type?.replace(/_/g, " ")} {s.activity.minutes} min{s.activity.km ? `, ${s.activity.km} km` : ""}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+/** "3 × 8", "6 × 60 s", "2 km". */
+const dose = (st: Block["steps"][number]) =>
+  st.sets && st.reps ? `${st.sets} × ${st.reps}` : st.reps ?? (st.sets ? `${st.sets} sets` : "");
+
+function Workout({ blocks }: { blocks: Block[] }) {
+  return (
+    <Stack gap={10} className="workout">
+      {blocks.map((b, i) => (
+        <Box key={i}>
+          <Group gap={6} mb={4}>
+            <Text size="xs" fw={600} c={T.MUTED} tt="uppercase" style={{ letterSpacing: 0.4 }}>{b.title}</Text>
+            {b.rounds && b.rounds > 1 && <Text size="xs" c={T.FAINT}>× {b.rounds} rounds</Text>}
+          </Group>
+          <Stack gap={6}>
+            {b.steps.map((st, j) => (
+              <Group key={j} justify="space-between" align="flex-start" wrap="nowrap" gap="md" className="workout-step">
+                <Box style={{ minWidth: 0 }}>
+                  <Text size="sm" c={T.TEXT}>{st.name}</Text>
+                  {(st.target || st.note) && (
+                    <Text size="xs" c={T.FAINT}>{[st.target, st.note].filter(Boolean).join(" · ")}</Text>
+                  )}
+                </Box>
+                <Box ta="right" style={{ flexShrink: 0 }}>
+                  <Text size="sm" c={T.TEXT} className="num">{dose(st)}</Text>
+                  {st.rest && <Text size="xs" c={T.FAINT}>rest {st.rest}</Text>}
+                </Box>
+              </Group>
+            ))}
+          </Stack>
+          {b.note && <Text size="xs" c={T.FAINT} mt={4} fs="italic">{b.note}</Text>}
+        </Box>
+      ))}
     </Stack>
   );
 }
@@ -145,9 +214,7 @@ function TodayCard({ view }: { view: View }) {
             {s.outcome === "done" ? (
               <Group gap={6} c={T.GREEN}>
                 <IconCircleCheck size={16} />
-                <Text size="sm" c={T.GREEN}>
-                  Done{s.activity ? ` — ${s.activity.type?.replace(/_/g, " ")} ${s.activity.minutes} min` : ""}
-                </Text>
+                <Text size="sm" c={T.GREEN}>Done</Text>
               </Group>
             ) : s.outcome !== "skipped" && (
               <Group gap="xs">
@@ -273,32 +340,50 @@ const OUTCOME: Record<Tracked["outcome"], { icon: ReactNode; color: string }> = 
   upcoming: { icon: <IconCircle size={16} />, color: T.FAINT },
 };
 
-function WeekCard({ title, sessions, today }: { title: string; sessions: Tracked[]; today: string }) {
-  const phase = sessions[0]?.phase;
+/** This week and next in one card; each session opens into its workout. */
+function WeeksCard({ weeks, today }: { weeks: [string, Tracked[]][]; today: string }) {
   return (
     <Card>
-      <Stack gap="xs">
-        <Group justify="space-between">
-          <Text size="sm" c={SUBTLE}>{title}</Text>
-          {phase && <Text size="xs" c={T.FAINT}>{phase} phase · {hm(sessions.reduce((m, s) => m + s.durationMin, 0))}</Text>}
-        </Group>
-        {sessions.length ? sessions.map((s) => {
-          const o = OUTCOME[s.outcome];
-          return (
-            <Group key={s.id} gap={10} wrap="nowrap" align="flex-start" opacity={s.date < today && s.outcome !== "done" ? 0.75 : 1}>
-              <Box c={o.color} mt={2}>{o.icon}</Box>
-              <Box style={{ flex: 1, minWidth: 0 }}>
-                <Group gap={6} wrap="nowrap">
-                  <Dot color={INTENSITY[s.intensity]} />
-                  <Text size="sm" c={T.TEXT} truncate>{s.title}</Text>
-                </Group>
-                <Text size="xs" c={T.FAINT}>{dayLabel(s.date)} · {size(s)}</Text>
-              </Box>
+      <Stack gap="md">
+        {weeks.map(([title, sessions]) => (
+          <Box key={title}>
+            <Group justify="space-between" mb={4}>
+              <Text size="sm" c={SUBTLE}>{title}</Text>
+              {sessions[0] && (
+                <Text size="xs" c={T.FAINT}>
+                  {sessions[0].phase} phase · {hm(sessions.reduce((m, s) => m + s.durationMin, 0))}
+                </Text>
+              )}
             </Group>
-          );
-        }) : <Text size="sm" c={T.FAINT}>Nothing planned.</Text>}
+            {sessions.length
+              ? sessions.map((s) => <SessionRow key={s.id} s={s} today={today} />)
+              : <Text size="sm" c={T.FAINT}>Nothing planned.</Text>}
+          </Box>
+        ))}
       </Stack>
     </Card>
+  );
+}
+
+function SessionRow({ s, today }: { s: Tracked; today: string }) {
+  const o = OUTCOME[s.outcome];
+  return (
+    <details className="session-row">
+      <summary style={{ opacity: s.date < today && s.outcome !== "done" ? 0.75 : 1 }}>
+        <Box c={o.color} style={{ display: "flex", flexShrink: 0 }}>{o.icon}</Box>
+        <Box style={{ flex: 1, minWidth: 0 }}>
+          <Group gap={6} wrap="nowrap">
+            <Dot color={INTENSITY[s.intensity]} />
+            <Text size="sm" c={T.TEXT} truncate>{s.title}</Text>
+          </Group>
+          <Text size="xs" c={T.FAINT}>{dayLabel(s.date)} · {size(s)}</Text>
+        </Box>
+        <IconChevronRight size={16} color={T.FAINT} className="chevron" />
+      </summary>
+      <Box pl={30} pr={4} pb="sm" pt={4}>
+        <SessionDetail s={s} />
+      </Box>
+    </details>
   );
 }
 
@@ -321,7 +406,7 @@ function WhyCard({ view }: { view: View }) {
         )}
         <Group justify="space-between" mt="xs">
           <Text size="xs" c={T.FAINT}>
-            Ask Claude to swap, move or add sessions; it can edit this plan.
+            To swap, move or add sessions, ask Claude Desktop or Claude Code: they can edit this plan.
           </Text>
           <form action={archivePlanAction}>
             <SubmitButton size="xs" variant="subtle" color="gray">Archive plan</SubmitButton>

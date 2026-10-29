@@ -38,6 +38,7 @@ src/mcp/server.ts   the MCP server: registers the tools (stdio)
 src/mcp/tools.ts    the tools' logic
 src/mcp/sql-runner.ts  runs one run_sql query in its own process, so it can be stopped
 src/mcp/plan-tools.ts the training-plan tools
+src/mcp/chat.ts     the Plan page's chat: Claude with the read-only tools (route: src/app/api/plan-chat)
 ```
 
 `analytics.golden.test.ts` pins the analytics and verdicts to what the original
@@ -99,7 +100,8 @@ types.ts     goals, sessions, profile and body-state shapes
 profile.ts   the athlete from the data: last 4/12 weeks, activity mix, VO₂max, and
              the body state (ready / normal / caution / recover, from the verdicts' RULES)
 paces.ts     training and race paces from VO₂max (Daniels' VDOT model)
-generate.ts  the plan: phases, weekly volume, each week's sessions, events, notes
+generate.ts  the plan: phases, weekly volume, each week's sessions (with the workout in
+             detail: warm-up, main set, rounds, cool-down; sets, reps, targets, rest), events, notes
 adapt.ts     matching Garmin activities to sessions; easing the next days (and undoing it)
 store.ts     plans.db: plans, sessions (each keeps its generated original), change log
 service.ts   create / view / adapt / edit, as the app and MCP server call them
@@ -107,7 +109,26 @@ service.ts   create / view / adapt / edit, as the app and MCP server call them
 
 Plans live in `plans.db`, next to `garmin.db` unless `PLANS_DB_PATH` says
 otherwise. The Plan page's forms are server actions with no login, like the
-rest of the app: keep it on your Mac or home network.
+rest of the app: keep it on your Mac or home network. Plans saved before
+sessions had workout details get them the first time `plans.db` is opened
+(the plan is regenerated from what was asked for and the profile it was built
+from; sessions edited by hand keep just their description).
+
+### The Plan page's chat
+
+"Ask about your plan" answers questions about sessions and the plan with
+Claude (`claude-opus-5-5`, low effort), using the MCP server's read-only tools
+(`src/mcp/chat.ts`): it can't change the plan. It needs an API key:
+
+```bash
+echo 'ANTHROPIC_API_KEY=sk-ant-…' > web/.env.local   # gitignored; restart the app
+```
+
+Each question costs a little, and plan summaries and Garmin readings go to the
+Claude API to answer it. Like the rest of the app there's no login, so anyone
+who can reach the app can use the chat on your key: keep it on your Mac or
+home network. The conversation is kept in the browser tab only.
+`src/mcp/chat.test.ts` runs it against a fake API (no key, no network).
 
 `generate.test.ts` checks the rules for every goal with 3 to 7 training days
 (dates, hard days never back to back, days per week, time limits, ≤ 10% growth,

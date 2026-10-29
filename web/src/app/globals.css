@@ -74,3 +74,65 @@ html, body { -webkit-text-size-adjust: 100%; }
     padding-bottom: calc(58px + var(--app-shell-padding, 16px) + env(safe-area-inset-bottom));
   }
 }
+
+/* --- Plan page: sessions that open into their workout --- */
+
+.session-row > summary,
+.plan-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 8px;
+}
+.session-row > summary::-webkit-details-marker,
+.plan-more > summary::-webkit-details-marker { display: none; }
+.session-row > summary { padding: 8px 6px; margin: 0 -6px; }
+.session-row > summary:hover { background: rgba(255,255,255,0.03); }
+.session-row + .session-row { border-top: 1px solid rgba(255,255,255,0.04); }
+.session-row .chevron, .plan-more .chevron { flex-shrink: 0; transition: transform .15s ease; }
+.session-row[open] > summary .chevron,
+.plan-more[open] > summary .chevron { transform: rotate(90deg); }
+.plan-more > summary { padding: 6px 0; width: fit-content; }
+.plan-more > summary:hover { opacity: .85; }
+
+.workout-step + .workout-step { padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.05); }
+
+/* Sessions and the chat side by side on wide screens; the chat stays in view. */
+.plan-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: $mantine-breakpoint-lg) {
+  .plan-grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; }
+  .plan-chat-col { position: sticky; top: 76px; }
+  .plan-chat-log { max-height: calc(100vh - 230px); }
+}
+
+/* --- Plan chat --- */
+
+.plan-chat { display: flex; flex-direction: column; }
+.plan-chat-log { overflow-y: auto; min-height: 120px; max-height: 60vh; overscroll-behavior: contain; }
+.plan-chat-question {
+  margin-left: auto;
+  width: fit-content;
+  max-width: 85%;
+  padding: 6px 12px;
+  border-radius: 12px 12px 4px 12px;
+  background: rgba(31,208,130,0.10);
+  border: 1px solid rgba(31,208,130,0.18);
+}
+.plan-chat-suggestion {
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: border-color .15s ease, background .15s ease;
+}
+.plan-chat-suggestion:hover { border-color: rgba(31,208,130,0.35); background: rgba(31,208,130,0.04); }
+.plan-chat-input {
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.18);
+  padding-right: 4px;
+}
+.plan-chat-input:focus-within { border-color: rgba(31,208,130,0.4); }
+.plan-chat-status { animation: plan-chat-pulse 1.4s ease-in-out infinite; }
+@keyframes plan-chat-pulse { 50% { opacity: .45; } }

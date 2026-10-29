@@ -10,7 +10,9 @@
  * never rendered as HTML (only inside the page's script data).
  *
  * The Plan page is checked twice against a throwaway plans.db: with no plan
- * (the form), then with one built from the real Garmin data.
+ * (the form), then with one built from the real Garmin data: its sessions'
+ * workouts and the chat must render. The chat route is only sent a bad
+ * request, so the smoke run never calls (or pays for) the Claude API.
  */
 
 import { spawn } from "node:child_process";
@@ -100,6 +102,12 @@ try {
   await check("/plan", "Build a training plan");
   await createPlan();
   await check("/plan", "Why the plan looks like this");
+  await check("/plan", "workout-step");
+  await check("/plan", "Ask about your plan");
+
+  const chat = await fetch(`${base}/api/plan-chat`, { method: "POST", body: "{}" });
+  checked++;
+  if (chat.status !== 400) failures.push(`/api/plan-chat with a bad request: expected 400, got ${chat.status}`);
 
   for (const [from, to] of Object.entries(REDIRECTS)) {
     const res = await fetch(base + from, { redirect: "manual" });
