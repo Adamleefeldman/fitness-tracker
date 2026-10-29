@@ -136,7 +136,7 @@ export const getPlanInput = {
 const sessionOut = (s: Tracked) => ({
   id: s.id, date: s.date, weekday: WEEKDAYS[(new Date(`${s.date}T00:00:00Z`).getUTCDay() + 6) % 7],
   week: s.week, phase: s.phase, discipline: s.discipline, intensity: s.intensity, title: s.title,
-  description: s.description, duration_min: s.durationMin, distance_km: s.distanceKm, outcome: s.outcome,
+  description: s.description, workout: s.blocks ?? null, duration_min: s.durationMin, distance_km: s.distanceKm, outcome: s.outcome,
   done_with: s.activity, changed_by: s.source === "plan" ? null : s.source, note: s.note,
 });
 

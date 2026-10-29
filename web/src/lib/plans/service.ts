@@ -189,6 +189,8 @@ export function editSessions(db: Database.Database, edits: Edit[], now: Date): s
           durationMin: e.durationMin != null ? Math.round(e.durationMin) : s.durationMin,
           distanceKm: e.distanceKm !== undefined ? e.distanceKm : s.distanceKm,
           intensity: e.intensity ?? s.intensity, discipline: e.discipline ?? s.discipline,
+          // rewritten by hand: the generated details no longer describe it
+          blocks: e.description != null || e.discipline != null ? undefined : s.blocks,
         };
         S.updateSession(db, e.id, next, "edit", e.note ?? s.note);
         done.push(`updated ${s.date} ${s.title}${date !== s.date ? ` → ${date}` : ""}${next.title !== s.title ? ` as ${next.title}` : ""}`);

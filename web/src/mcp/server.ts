@@ -137,7 +137,8 @@ export function buildServer(db: Database.Database, plansFile: string, now = () =
     title: "Training plan",
     description:
       "The active plan against what was actually done: its verdict (on track / behind / adjust / taper), body state, " +
-      "sessions in a date range (default: last 7 to next 14 days) with ids, each marked done (with the matching " +
+      "sessions in a date range (default: last 7 to next 14 days) with ids and each workout in detail (blocks of " +
+      "steps with sets, reps, target pace/effort/load and rest), each marked done (with the matching " +
       "Garmin activity), missed, skipped, today or upcoming, planned vs done volume per week, suggested " +
       "adaptations, and recent changes.",
     inputSchema: PT.getPlanInput,

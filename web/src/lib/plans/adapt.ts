@@ -14,7 +14,7 @@
 import * as A from "../analytics.ts";
 import type { Activity } from "../types.ts";
 import { addDays, daysBetween } from "./profile.ts";
-import type { BodyState, Discipline, Intensity, Session } from "./types.ts";
+import type { Block, BodyState, Discipline, Intensity, Session } from "./types.ts";
 
 /** A session as stored: an id, how it's going, and the generated original. */
 export interface PlannedSession extends Session {
@@ -126,11 +126,25 @@ function eased(s: Session, factor: number, why: string): Session {
     mobility: [s.title, s.description],
   };
   const [title, description] = easy[s.discipline];
+  const steps: Record<Discipline, Block[] | undefined> = {
+    run: [{ title: "Run", steps: [{ name: "Easy running", reps: `${minutes} min`, target: "conversational" }] }],
+    race: s.blocks,
+    hyrox: [{ title: "Engine", steps: [{ name: "Rower or bike", reps: `${minutes} min`, target: "steady (RPE 4)" }, { name: "Mobility", reps: "10 min" }] }],
+    crossfit: [{ title: "Engine", steps: [{ name: "Rower or bike", reps: `${minutes} min`, target: "steady (RPE 4)" }, { name: "Mobility", reps: "10 min" }] }],
+    conditioning: [{ title: "Session", steps: [{ name: "Easy cardio", reps: `${minutes} min`, target: "easy (RPE 4)" }] }],
+    // the same exercises, light
+    strength: s.blocks?.map((b) => ({
+      ...b, note: "Technique sets at about 60%, nothing to failure, then mobility.",
+      steps: b.steps.map((st) => (st.sets ? { ...st, sets: Math.min(st.sets, 2), target: "light (about 60%)" } : st)),
+    })),
+    mobility: s.blocks,
+  };
   return {
     ...s, title, intensity: "easy", durationMin: minutes,
     distanceKm: s.distanceKm == null ? null : Math.round(s.distanceKm * factor * 2) / 2,
     kind: s.kind.endsWith("_eased") ? s.kind : `${s.kind}_eased`,
     description: `Eased because ${why}. ${description}`,
+    blocks: steps[s.discipline],
   };
 }
 
@@ -141,12 +155,20 @@ function softened(s: Session, why: string): Session {
     distanceKm: s.distanceKm == null ? null : Math.round(s.distanceKm * 0.8 * 2) / 2,
     title: `${s.title} (lighter)`,
     description: `Lighter because ${why}: drop the last quarter of the main set and stay at the easy end of the paces. ${s.description}`,
+    // a quarter fewer repeats, and a reminder on the parts that are just a size
+    blocks: s.blocks?.map((b) => ({
+      ...b,
+      rounds: b.rounds && b.rounds > 1 ? Math.max(1, Math.round(b.rounds * 0.75)) : b.rounds,
+      steps: b.steps.map((st) => (st.sets && st.sets > 1 ? { ...st, sets: Math.max(1, Math.round(st.sets * 0.75)) } : st)),
+      note: /warm-up|cool-down/i.test(b.title) ? b.note : "Lighter today: stay at the easy end of the paces.",
+    })),
   };
 }
 
 const restDay = (s: Session, why: string): Session => ({
   ...s, discipline: "mobility", kind: "rest", intensity: "easy", title: "Rest",
   description: `Rest today because ${why}. A walk or 15 min of mobility at most.`, durationMin: 15, distanceKm: null,
+  blocks: [{ title: "Rest", steps: [{ name: "A walk or easy mobility", reps: "15 min at most" }] }],
 });
 
 const same = (a: Session, b: Session) =>

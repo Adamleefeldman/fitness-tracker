@@ -9,7 +9,9 @@ import { existsSync } from "node:fs";
 import Database from "better-sqlite3";
 
 import type { Change, PlannedSession } from "./adapt.ts";
-import type { GeneratedPlan, PhaseSpan, PlanInput, Profile, Session } from "./types.ts";
+import { generatePlan } from "./generate.ts";
+import { addDays } from "./profile.ts";
+import type { Block, GeneratedPlan, PhaseSpan, PlanInput, Profile, Session } from "./types.ts";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS plans (
@@ -44,7 +46,8 @@ CREATE TABLE IF NOT EXISTS plan_sessions (
   status TEXT NOT NULL DEFAULT 'planned', -- planned | done | skipped | removed
   source TEXT NOT NULL DEFAULT 'plan',    -- plan | adapt | edit: who last changed it
   note TEXT,
-  original_json TEXT NOT NULL             -- the session as generated
+  original_json TEXT NOT NULL,            -- the session as generated
+  blocks_json TEXT                        -- the workout in detail (warm-up, sets, reps…)
 );
 CREATE INDEX IF NOT EXISTS idx_plan_sessions ON plan_sessions(plan_id, date);
 
@@ -66,7 +69,44 @@ export function openPlans(file: string, { create }: { create: boolean }): Databa
   const db = new Database(file);
   db.pragma("journal_mode = WAL");
   db.exec(SCHEMA);
+  const cols = db.prepare("PRAGMA table_info(plan_sessions)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "blocks_json")) {
+    db.transaction(() => {
+      db.exec("ALTER TABLE plan_sessions ADD COLUMN blocks_json TEXT");
+      backfillBlocks(db);
+    })();
+  }
   return db;
+}
+
+/**
+ * Plans saved before sessions had workout details: rebuild each one from what
+ * was asked for and the profile it was built from (the generator is
+ * deterministic), and give the details to every session whose original still
+ * matches, and to the current version when it's unchanged. Anything that
+ * doesn't match keeps just its description.
+ */
+function backfillBlocks(db: Database.Database) {
+  const key = (s: Session) => `${s.date}|${s.title}|${s.description}`;
+  const update = db.prepare("UPDATE plan_sessions SET original_json = ?, blocks_json = ? WHERE id = ?");
+  for (const plan of listPlans(db)) {
+    let blocks: Map<string, Block[] | undefined>;
+    try {
+      const again = generatePlan({ ...plan.input, startDate: plan.startDate }, plan.profile, addDays(plan.startDate, -1));
+      blocks = new Map(again.sessions.map((s) => [key(s), s.blocks]));
+    } catch {
+      continue;
+    }
+    const rows = db.prepare("SELECT id, title, description, original_json FROM plan_sessions WHERE plan_id = ?")
+      .all(plan.id) as { id: number; title: string; description: string; original_json: string }[];
+    for (const r of rows) {
+      const original: Session = JSON.parse(r.original_json);
+      const b = blocks.get(key(original));
+      if (!b) continue;
+      const unchanged = r.title === original.title && r.description === original.description;
+      update.run(JSON.stringify({ ...original, blocks: b }), unchanged ? JSON.stringify(b) : null, r.id);
+    }
+  }
 }
 
 export interface StoredPlan {
@@ -99,7 +139,7 @@ const toPlan = (r: PlanRow): StoredPlan => ({
 interface SessionRow {
   id: number; date: string; week: number; phase: string; role: string; discipline: string; kind: string;
   intensity: string; title: string; description: string; duration_min: number; distance_km: number | null;
-  status: string; source: string; note: string | null; original_json: string;
+  status: string; source: string; note: string | null; original_json: string; blocks_json: string | null;
 }
 
 const toSession = (r: SessionRow): PlannedSession => ({
@@ -108,12 +148,13 @@ const toSession = (r: SessionRow): PlannedSession => ({
   title: r.title, description: r.description, durationMin: r.duration_min, distanceKm: r.distance_km,
   status: r.status as PlannedSession["status"], source: r.source as PlannedSession["source"], note: r.note,
   original: JSON.parse(r.original_json),
+  ...(r.blocks_json ? { blocks: JSON.parse(r.blocks_json) } : {}),
 });
 
 const sessionValues = (s: Session) => ({
   date: s.date, week: s.week, phase: s.phase, role: s.role, discipline: s.discipline, kind: s.kind,
   intensity: s.intensity, title: s.title, description: s.description, duration_min: s.durationMin,
-  distance_km: s.distanceKm,
+  distance_km: s.distanceKm, blocks_json: s.blocks ? JSON.stringify(s.blocks) : null,
 });
 
 /** Save a new plan as the active one; any other active plan is archived. */
@@ -132,9 +173,9 @@ export function savePlan(db: Database.Database, plan: GeneratedPlan, profile: Pr
     const id = Number(lastInsertRowid);
     const insert = db.prepare(`
       INSERT INTO plan_sessions (plan_id, date, week, phase, role, discipline, kind, intensity, title, description,
-        duration_min, distance_km, original_json)
+        duration_min, distance_km, blocks_json, original_json)
       VALUES (@plan_id, @date, @week, @phase, @role, @discipline, @kind, @intensity, @title, @description,
-        @duration_min, @distance_km, @original_json)
+        @duration_min, @distance_km, @blocks_json, @original_json)
     `);
     for (const s of plan.sessions) insert.run({ plan_id: id, ...sessionValues(s), original_json: JSON.stringify(s) });
     return id;
@@ -175,7 +216,7 @@ export function updateSession(db: Database.Database, id: number, s: Session, sou
   db.prepare(`
     UPDATE plan_sessions SET date = @date, week = @week, phase = @phase, role = @role, discipline = @discipline,
       kind = @kind, intensity = @intensity, title = @title, description = @description, duration_min = @duration_min,
-      distance_km = @distance_km, source = @source, note = @note
+      distance_km = @distance_km, blocks_json = @blocks_json, source = @source, note = @note
     WHERE id = @id
   `).run({ id, ...sessionValues(s), source, note });
 }
@@ -187,9 +228,9 @@ export function setSessionStatus(db: Database.Database, id: number, status: "pla
 export function addSession(db: Database.Database, planId: number, s: Session, note: string | null): number {
   const { lastInsertRowid } = db.prepare(`
     INSERT INTO plan_sessions (plan_id, date, week, phase, role, discipline, kind, intensity, title, description,
-      duration_min, distance_km, source, note, original_json)
+      duration_min, distance_km, blocks_json, source, note, original_json)
     VALUES (@plan_id, @date, @week, @phase, @role, @discipline, @kind, @intensity, @title, @description,
-      @duration_min, @distance_km, 'edit', @note, @original_json)
+      @duration_min, @distance_km, @blocks_json, 'edit', @note, @original_json)
   `).run({ plan_id: planId, ...sessionValues(s), note, original_json: JSON.stringify(s) });
   return Number(lastInsertRowid);
 }

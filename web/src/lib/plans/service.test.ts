@@ -46,6 +46,31 @@ describe("store", () => {
     expect(p.notes[0]).toMatch(/^Built from your last 4 weeks/);
     expect(p.phases.at(-1)).toMatchObject({ phase: "taper", end: "2026-11-01" });
   });
+
+  it("stores each session's workout details", () => {
+    const db = fresh();
+    const { id, plan } = Sv.createPlan(db, garmin, { goal: "hyrox", name: "HYROX", eventDate: "2026-11-01", daysPerWeek: 4 }, NOW);
+    expect(St.planSessions(db, id).map((s) => s.blocks)).toEqual(plan.sessions.map((s) => s.blocks));
+  });
+
+  it("adds details to plans saved before sessions had them", () => {
+    const file = path.join(mkdtempSync(path.join(dir, "old-")), "plans.db");
+    const db = St.openPlans(file, { create: true })!;
+    const { id } = Sv.createPlan(db, garmin, { goal: "marathon", name: "M", eventDate: "2026-12-06", daysPerWeek: 5 }, NOW);
+    const ss = St.planSessions(db, id);
+    Sv.editSessions(db, [{ op: "update", id: ss[0].id, title: "Changed by hand", description: "My own run" }], NOW);
+    // what a plans.db from before looked like: no column, originals without details
+    db.exec("ALTER TABLE plan_sessions DROP COLUMN blocks_json");
+    for (const s of ss) {
+      db.prepare("UPDATE plan_sessions SET original_json = ? WHERE id = ?").run(JSON.stringify({ ...s.original, blocks: undefined }), s.id);
+    }
+    db.close();
+    const again = St.openPlans(file, { create: false })!;
+    const after = St.planSessions(again, id);
+    expect(after[0].blocks).toBeUndefined(); // changed by hand
+    expect(after[0].original.blocks).toEqual(ss[0].blocks);
+    expect(after.slice(1).map((s) => s.blocks)).toEqual(ss.slice(1).map((s) => s.blocks));
+  });
 });
 
 describe("planView", () => {
@@ -106,6 +131,19 @@ describe("editSessions", () => {
       { op: "remove", id: 99_999 },
     ], NOW)).toThrow(/isn't in the active plan/);
     expect(St.planSessions(db, St.activePlan(db)!.id)[0].title).toBe(ss[0].title);
+  });
+
+  it("keeps a moved session's details, and drops them when it's rewritten", () => {
+    const { db, ss } = setup();
+    const [a, b] = ss;
+    Sv.editSessions(db, [
+      { op: "update", id: a.id, date: "2026-07-25" },
+      { op: "update", id: b.id, description: "Whatever feels good" },
+    ], NOW);
+    const after = St.planSessions(db, St.activePlan(db)!.id);
+    expect(after.find((s) => s.id === a.id)!.blocks).toEqual(a.blocks);
+    expect(after.find((s) => s.id === b.id)!.blocks).toBeUndefined();
+    expect(after.find((s) => s.id === b.id)!.original.blocks).toEqual(b.blocks);
   });
 });
 

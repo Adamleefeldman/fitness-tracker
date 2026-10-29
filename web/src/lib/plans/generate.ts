@@ -20,8 +20,8 @@ import {
 import { addDays, daysBetween } from "./profile.ts";
 import {
   GOAL_LABELS, WEEKDAYS,
-  type Discipline, type GeneratedPlan, type Goal, type Intensity, type Phase, type PhaseSpan, type PlanInput,
-  type Profile, type Session, type Weekday,
+  type Block, type Discipline, type GeneratedPlan, type Goal, type Intensity, type Phase, type PhaseSpan, type PlanInput,
+  type Profile, type Session, type Step, type Weekday,
 } from "./types.ts";
 
 export class PlanError extends Error {}
@@ -130,6 +130,7 @@ interface Spec {
   description: string;
   durationMin: number;
   distanceKm: number | null;
+  blocks: Block[];
 }
 
 // --- helpers ---
@@ -138,6 +139,18 @@ const r5 = (min: number) => Math.max(10, Math.round(min / 5) * 5);
 const halfKm = (km: number) => Math.max(1, Math.round(km * 2) / 2);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * clamp(t, 0, 1));
+
+const step = (name: string, more: Omit<Step, "name"> = {}): Step => ({ name, ...more });
+const block = (title: string, steps: Step[], more: Omit<Block, "title" | "steps"> = {}): Block => ({ title, steps, ...more });
+const EASY_RPE = "easy (RPE 3–4)";
+const warmUp = (min: number, how = "Easy jog or row") => block("Warm-up", [step(how, { reps: `${min} min`, target: EASY_RPE })]);
+const coolDown = (min: number, how = "Easy jog, then stretch") => block("Cool-down", [step(how, { reps: `${min} min`, target: EASY_RPE })]);
+/** Before lifting: easy cardio and dynamic mobility. */
+const liftWarmUp = block("Warm-up", [
+  step("Easy cardio", { reps: "5 min" }),
+  step("Dynamic mobility: leg swings, hip openers, bodyweight squats", { reps: "5 min" }),
+]);
+const strides = (n: number) => block("Strides", [step("Strides on flat ground", { sets: n, reps: "20 s", target: "fast and relaxed", rest: "walk back" })]);
 
 function pace(ctx: Ctx, key: "marathon" | "threshold" | "interval" | "repetition" | "race", effort: string) {
   if (key === "race") return ctx.racePace ? formatPace(ctx.racePace) : effort;
@@ -152,32 +165,47 @@ function easyPace(p: PaceCtx) {
 
 const easyMinPerKm = (p: PaceCtx) => (p.paces.easy[0] + p.paces.easy[1]) / 2 / 60;
 
-function easyRun(p: PaceCtx, km: number, title = "Easy run", extra = ""): Spec {
+function easyRun(p: PaceCtx, km: number, title = "Easy run", extra = "", after: Block[] = []): Spec {
   const d = halfKm(km);
   return {
     discipline: "run", kind: "easy_run", intensity: "easy", title,
     description: `${d} km at ${easyPace(p)}${extra}`,
     durationMin: r5(d * easyMinPerKm(p)), distanceKm: d,
+    blocks: [block("Run", [step("Easy running", { reps: `${d} km`, target: easyPace(p) })]), ...after],
   };
 }
 
 /** A quality run: warm-up, the main set (`mainKm` taking `mainMin` minutes), cool-down. */
-function workout(ctx: Ctx, kind: string, title: string, main: string, mainKm: number, mainMin: number,
+function workout(ctx: Ctx, kind: string, title: string, main: string, mainSteps: Step[], mainKm: number, mainMin: number,
   intensity: Intensity = "hard"): Spec {
+  const easy = easyPace(ctx);
   return {
     discipline: "run", kind, intensity, title,
     description: `2 km easy warm-up, then ${main}, then 1.5 km easy cool-down`,
     durationMin: r5(mainMin + WARM_COOL_KM * easyMinPerKm(ctx)), distanceKm: halfKm(mainKm + WARM_COOL_KM),
+    blocks: [
+      block("Warm-up", [step("Easy running", { reps: "2 km", target: easy })]),
+      block("Main set", mainSteps),
+      block("Cool-down", [step("Easy running", { reps: "1.5 km", target: easy })]),
+    ],
   };
 }
 
 function timed(discipline: Discipline, kind: string, intensity: Intensity, title: string, description: string,
-  minutes: number): Spec {
-  return { discipline, kind, intensity, title, description, durationMin: r5(minutes), distanceKm: null };
+  minutes: number, blocks: Block[]): Spec {
+  return { discipline, kind, intensity, title, description, durationMin: r5(minutes), distanceKm: null, blocks };
 }
 
-const mobility = (minutes = 25): Spec => timed("mobility", "mobility", "easy", "Mobility & recovery",
-  "Easy mobility, foam rolling or a relaxed walk. Keep it restful.", minutes);
+function mobility(minutes = 25): Spec {
+  const part = (share: number) => `${Math.max(5, Math.round((minutes * share) / 5) * 5)} min`;
+  return timed("mobility", "mobility", "easy", "Mobility & recovery",
+    "Easy mobility, foam rolling or a relaxed walk. Keep it restful.", minutes, [
+      block("Recovery", [
+        step("Foam rolling: calves, quads, glutes, upper back", { reps: part(0.4) }),
+        step("Mobility: hips, ankles, thoracic spine", { reps: part(0.6) }),
+      ], { note: "A relaxed walk works instead." }),
+    ]);
+}
 
 /** Repeats that add up to about `km`: the largest rep length giving a count in [lo, hi]. */
 function reps(km: number, lengths: number[], lo: number, hi: number) {
@@ -215,40 +243,57 @@ function runSession(role: Role, ctx: Ctx): Spec {
 
   switch (role) {
     case "long": {
+      const easy = easyPace(ctx);
+      const finish = (fast: number, at: string, text: string): Spec => {
+        const base = easyRun(ctx, total, "Long run", text);
+        return {
+          ...base, kind: "long_run", intensity: "moderate",
+          blocks: [block("Run", [
+            step("Easy running", { reps: `${halfKm(base.distanceKm! - fast)} km`, target: easy }),
+            step("Fast finish", { reps: `${fast} km`, target: at }),
+          ])],
+        };
+      };
       if (phase === "peak" && !short) {
         const fast = Math.min(g === "marathon" ? lerp(6, 12, t) : lerp(3, 6, t), Math.floor(total * 0.4));
-        return { ...easyRun(ctx, total, "Long run", `, with the last ${fast} km at ${g === "marathon" ? M : RP}`),
-          kind: "long_run", intensity: "moderate" };
+        const at = g === "marathon" ? M : RP;
+        return finish(fast, at, `, with the last ${fast} km at ${at}`);
       }
       if (phase === "build" && g === "marathon") {
         const fast = Math.min(lerp(3, 6, t), Math.floor(total * 0.3));
-        return { ...easyRun(ctx, total, "Long run", `, finishing the last ${fast} km at ${M}`),
-          kind: "long_run", intensity: "moderate" };
+        return finish(fast, M, `, finishing the last ${fast} km at ${M}`);
       }
       return { ...easyRun(ctx, total, "Long run"), kind: "long_run" };
     }
     case "q1": {
       if (phase === "base") {
         const n = fit(clamp(Math.round(main / 0.4), 6, 12), 3, 6);
-        return workout(ctx, "hills", "Hill repeats", `${n}× 60 s uphill hard, jogging back down`, main, n * 3);
+        return workout(ctx, "hills", "Hill repeats", `${n}× 60 s uphill hard, jogging back down`,
+          [step("Uphill", { sets: n, reps: "60 s", target: "hard (RPE 8)", rest: "jog back down" })], main, n * 3);
       }
-      if (phase === "taper") return workout(ctx, "sharpener", "Sharpener", `4× 400 m at ${R}, full recovery`, 1.6, 10);
+      if (phase === "taper") {
+        return workout(ctx, "sharpener", "Sharpener", `4× 400 m at ${R}, full recovery`,
+          [step("Fast reps", { sets: 4, reps: "400 m", target: R, rest: "full recovery" })], 1.6, 10);
+      }
       if (phase === "build") {
         if (short) {
           const r = g === "5k" ? reps(main, [0.8], 4, 8) : reps(main, [1, 0.8], 3, 6);
           const { len } = r;
           const n = fit(r.n, len * minPer("interval") + 2.5, 3);
           return workout(ctx, "intervals", "VO₂max intervals", `${n}× ${km1(len)} at ${I}, 2–3 min jog between`,
+            [step("Intervals", { sets: n, reps: km1(len), target: I, rest: "2–3 min jog" })],
             n * len, n * (len * minPer("interval") + 2.5));
         }
         const each = clamp(Math.round((main * minPer("threshold")) / 3), 5, 15);
         return workout(ctx, "threshold", "Threshold intervals", `3× ${each} min at ${T}, 2 min jog between`,
+          [step("Threshold", { sets: 3, reps: `${each} min`, target: T, rest: "2 min jog" })],
           (3 * each) / minPer("threshold"), 3 * each + 4);
       }
       // peak: race-specific
       if (g === "marathon") {
         const each = clamp(Math.round((main * minPer("threshold")) / 2), 10, 20);
         return workout(ctx, "threshold", "Threshold", `2× ${each} min at ${T}, 3 min jog between`,
+          [step("Threshold", { sets: 2, reps: `${each} min`, target: T, rest: "3 min jog" })],
           (2 * each) / minPer("threshold"), 2 * each + 3);
       }
       const r = g === "5k" ? reps(main, [1, 0.8], 3, 6)
@@ -257,43 +302,62 @@ function runSession(role: Role, ctx: Ctx): Spec {
       const { len } = r;
       const n = fit(r.n, len * rpMin + 2.5, 2);
       return workout(ctx, "race_pace", `${GOAL_LABELS[g]} pace reps`, `${n}× ${km1(len)} at ${RP}, 2–3 min jog between`,
+        [step("Race-pace reps", { sets: n, reps: km1(len), target: RP, rest: "2–3 min jog" })],
         n * len, n * (len * rpMin + 2.5));
     }
     case "q2": {
-      if (phase === "base") return easyRun(ctx, total, "Easy run + strides", ", then 6× 20 s strides on flat ground");
-      if (phase === "taper") return easyRun(ctx, Math.min(total, 6), "Easy run + strides", ", then 4× 20 s strides");
+      if (phase === "base") return easyRun(ctx, total, "Easy run + strides", ", then 6× 20 s strides on flat ground", [strides(6)]);
+      if (phase === "taper") return easyRun(ctx, Math.min(total, 6), "Easy run + strides", ", then 4× 20 s strides", [strides(4)]);
       if (g === "marathon") {
         const k = clamp(Math.round(main), 4, 16);
-        return workout(ctx, "marathon_pace", "Marathon-pace run", `${k} km at ${RP}`, k, k * rpMin);
+        return workout(ctx, "marathon_pace", "Marathon-pace run", `${k} km at ${RP}`,
+          [step("Marathon pace", { reps: `${k} km`, target: RP })], k, k * rpMin);
       }
       if (g === "half_marathon" && phase === "build") {
         const k = clamp(Math.round(main), 3, 12);
-        return workout(ctx, "steady", "Steady run", `${k} km at ${M}`, k, k * minPer("marathon"), "moderate");
+        return workout(ctx, "steady", "Steady run", `${k} km at ${M}`,
+          [step("Steady", { reps: `${k} km`, target: M })], k, k * minPer("marathon"), "moderate");
       }
       if (phase === "peak") {
         const each = clamp(Math.round((main * minPer("threshold")) / 2), 6, 15);
         return workout(ctx, "threshold", "Threshold", `2× ${each} min at ${T}, 2 min jog between`,
+          [step("Threshold", { sets: 2, reps: `${each} min`, target: T, rest: "2 min jog" })],
           (2 * each) / minPer("threshold"), 2 * each + 2);
       }
       const mins = clamp(Math.round(main * minPer("threshold")), 12, 30);
-      return workout(ctx, "tempo", "Tempo run", `${mins} min at ${T}`, mins / minPer("threshold"), mins);
+      return workout(ctx, "tempo", "Tempo run", `${mins} min at ${T}`,
+        [step("Tempo", { reps: `${mins} min`, target: T })], mins / minPer("threshold"), mins);
     }
-    case "strength":
+    case "strength": {
       if (phase === "taper") return mobility(20);
-      return phase === "peak" || ctx.week.deload
+      const light = phase === "peak" || ctx.week.deload;
+      const n = light ? 2 : 3;
+      const lift = "moderate, 2 reps in reserve";
+      const blocks = [liftWarmUp, block("Strength", [
+        step("Back squats", { sets: n, reps: "8", target: lift, rest: "90 s" }),
+        step("Romanian deadlifts", { sets: n, reps: "8", target: lift, rest: "90 s" }),
+        step("Split squats", { sets: n, reps: "8/leg", rest: "60 s" }),
+        step("Calf raises", { sets: n, reps: "15", rest: "45 s" }),
+        step("Plank", { sets: n, reps: "40 s", rest: "30 s" }),
+        ...(light ? [] : [step("Side plank", { sets: n, reps: "40 s/side", rest: "30 s" })]),
+      ])];
+      return light
         ? timed("strength", "strength", "moderate", "Strength (maintenance)",
-          "2 sets each: squats ×8, Romanian deadlifts ×8, split squats ×8/leg, calf raises ×15, plank 40 s.", 30)
+          "2 sets each: squats ×8, Romanian deadlifts ×8, split squats ×8/leg, calf raises ×15, plank 40 s.", 30, blocks)
         : timed("strength", "strength", "moderate", "Strength for runners",
-          "3 sets each: squats ×8, Romanian deadlifts ×8, split squats ×8/leg, calf raises ×15, plank & side plank 40 s.", 40);
+          "3 sets each: squats ×8, Romanian deadlifts ×8, split squats ×8/leg, calf raises ×15, plank & side plank 40 s.", 40, blocks);
+    }
     case "easy1":
       return easyRun(ctx, total);
-    case "easy2":
+    case "easy2": {
       // keep a HIIT habit the data shows, as controlled cross-training
-      return ctx.crossTraining
-        ? timed("conditioning", "cross_training", "moderate", "Cross-training (your HIIT, kept controlled)",
-          "A HIIT class or circuit at RPE ≤ 7: skip the all-out finishers so the next run stays good. An easy run works too.",
-          Math.min(45, ctx.maxMin))
-        : easyRun(ctx, total);
+      if (!ctx.crossTraining) return easyRun(ctx, total);
+      const min = Math.min(45, ctx.maxMin);
+      return timed("conditioning", "cross_training", "moderate", "Cross-training (your HIIT, kept controlled)",
+        "A HIIT class or circuit at RPE ≤ 7: skip the all-out finishers so the next run stays good. An easy run works too.",
+        min, [block("Session", [step("HIIT class or circuit", { reps: `${r5(min)} min`, target: "RPE ≤ 7" })],
+          { note: "Skip the all-out finishers so the next run stays good. An easy run works too." })]);
+    }
     case "recovery":
       return mobility();
   }
@@ -301,71 +365,132 @@ function runSession(role: Role, ctx: Ctx): Spec {
 
 // --- HYROX ---
 
-const STATIONS = [
-  "1 km SkiErg", "50 m sled push", "50 m sled pull", "80 m burpee broad jumps",
-  "1 km row", "200 m farmers carry", "100 m sandbag lunges", "100 wall balls",
-];
-
-/** One station, scaled down for training rounds. */
-const STATION_ROUNDS = [
-  "250 m SkiErg", "25 m sled push", "25 m sled pull", "20 m burpee broad jumps",
-  "250 m row", "50 m farmers carry", "25 m sandbag lunges", "25 wall balls",
-];
+/** The eight stations in race order: the race distance, and one scaled down for training rounds. */
+const STATION = [
+  ["SkiErg", "1 km", "250 m"], ["sled push", "50 m", "25 m"], ["sled pull", "50 m", "25 m"],
+  ["burpee broad jumps", "80 m", "20 m"], ["row", "1 km", "250 m"], ["farmers carry", "200 m", "50 m"],
+  ["sandbag lunges", "100 m", "25 m"], ["wall balls", "100", "25"],
+] as const;
+const STATIONS = STATION.map(([name, race]) => `${race} ${name}`);
+const STATION_ROUNDS = STATION.map(([name, , round]) => `${round} ${name}`);
+const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+const stationStep = (i: number, size: "race" | "round") =>
+  step(cap(STATION[i][0]), { reps: STATION[i][size === "race" ? 1 : 2] });
 
 function hyroxSession(role: Role, ctx: Ctx): Spec {
   const { phase, index } = ctx.week;
   const m = ctx.minutes[role] ?? MIN_SESSION;
   const runPace = ctx.hasPaces ? formatPace(ctx.paces.threshold + 15) : "a strong, sustainable effort (RPE 7)";
+  const run = (reps: string) => step("Run", { reps, target: runPace });
   switch (role) {
     case "long":
       return { ...easyRun(ctx, m / easyMinPerKm(ctx), "Long aerobic run"), kind: "long_run" };
     case "q1": {
       if (ctx.special === "full_sim") {
         return timed("hyrox", "simulation", "hard", "Full HYROX simulation",
-          `8 rounds: 1 km run at ${runPace} + one station, in race order (${STATIONS.join(", ")}). Race weights; practise transitions.`, 90);
+          `8 rounds: 1 km run at ${runPace} + one station, in race order (${STATIONS.join(", ")}). Race weights; practise transitions.`, 90, [
+            warmUp(10),
+            block("Race simulation", STATION.flatMap((_, i) => [run("1 km"), stationStep(i, "race")]),
+              { note: "Race weights, in race order. Practise transitions." }),
+            coolDown(5, "Easy walk or jog"),
+          ]);
       }
       if (ctx.special === "half_sim") {
         return timed("hyrox", "simulation", "hard", "Half HYROX simulation",
-          `4 rounds: 1 km run at ${runPace} + ${STATIONS.slice(0, 4).join(", ")}. Race weights, race transitions.`, 50);
+          `4 rounds: 1 km run at ${runPace} + ${STATIONS.slice(0, 4).join(", ")}. Race weights, race transitions.`, 50, [
+            warmUp(10),
+            block("Half simulation", [0, 1, 2, 3].flatMap((i) => [run("1 km"), stationStep(i, "race")]),
+              { note: "Race weights, race transitions." }),
+          ]);
       }
       if (phase === "taper") {
         return timed("hyrox", "compromised_run", "moderate", "Race-pace primer",
-          `4 rounds: 500 m run at ${runPace} + 15 wall balls, easy rest between. Stay sharp, not tired.`, Math.min(m, 35));
+          `4 rounds: 500 m run at ${runPace} + 15 wall balls, easy rest between. Stay sharp, not tired.`, Math.min(m, 35), [
+            warmUp(10),
+            block("Primer", [run("500 m"), step("Wall balls", { reps: "15", rest: "easy, until recovered" })],
+              { rounds: 4, note: "Stay sharp, not tired." }),
+          ]);
       }
       if (phase === "base") {
         const n = clamp(Math.floor((m - 20) / 6.5), 3, 8);
         return timed("run", "intervals", "hard", "Run intervals",
-          `Warm up 10 min, then ${n}× 1 km at ${runPace} with 90 s rest. Cool down 10 min.`, 20 + n * 6.5);
+          `Warm up 10 min, then ${n}× 1 km at ${runPace} with 90 s rest. Cool down 10 min.`, 20 + n * 6.5, [
+            warmUp(10, "Easy jog"),
+            block("Main set", [step("Intervals", { sets: n, reps: "1 km", target: runPace, rest: "90 s" })]),
+            coolDown(10),
+          ]);
       }
       const rounds = clamp(Math.floor((m - 15) / 10), 2, 6);
-      const stations = [0, 1, 2, 3].map((k) => STATION_ROUNDS[(index * 2 + k) % 8]);
+      const picks = [0, 1, 2, 3].map((k) => (index * 2 + k) % 8);
+      const stations = picks.map((i) => STATION_ROUNDS[i]);
       return timed("hyrox", "compromised_run", "hard", "Compromised running",
         `Warm up 10 min, then ${rounds} rounds: 1 km at ${runPace}, straight into one station (rotate ${stations.join(" / ")}). ` +
-        "Run off the station without slowing down.", 15 + rounds * 10);
+        "Run off the station without slowing down.", 15 + rounds * 10, [
+          warmUp(10),
+          block("Compromised running", [
+            run("1 km"),
+            step("One station, rotating", { note: picks.map((i) => `${STATION[i][2]} ${STATION[i][0]}`).join(" / ") }),
+          ], { rounds, note: "Run off the station without slowing down." }),
+          coolDown(5),
+        ]);
     }
     case "q2": {
       if (phase === "taper") return mobility(25);
       const rounds = clamp(Math.floor((m - 10) / 9), 2, 6);
-      const set = STATION_ROUNDS.slice(index % 2 ? 4 : 0, index % 2 ? 8 : 4).join(", ");
+      const first = index % 2 ? 4 : 0;
+      const set = STATION_ROUNDS.slice(first, first + 4).join(", ");
+      const how = phase === "base" ? "Smooth technique, steady pace." : "Race weights, minimal rest.";
       return timed("hyrox", "stations", phase === "base" ? "moderate" : "hard", "Station endurance",
-        `Warm up 10 min, then ${rounds} rounds: ${set}. ${phase === "base" ? "Smooth technique, steady pace." : "Race weights, minimal rest."}`,
-        10 + rounds * 9);
+        `Warm up 10 min, then ${rounds} rounds: ${set}. ${how}`, 10 + rounds * 9, [
+          warmUp(10),
+          block("Stations", [0, 1, 2, 3].map((k) => stationStep(first + k, "round")), { rounds, note: how }),
+        ]);
     }
-    case "strength":
+    case "strength": {
       if (phase === "taper") return mobility(20);
       if (ctx.days <= 4) {
+        const rounds = phase === "base" ? 2 : 3;
         return timed("hyrox", "strength_stations", "moderate", "Strength & stations",
-          `Back squat 4×5 and deadlift 3×5, then ${phase === "base" ? 2 : 3} rounds: 25 m sled push, 25 m sled pull, ` +
-          "50 m farmers carry, 20 wall balls. Smooth and controlled.", clamp(m, 45, 60));
+          `Back squat 4×5 and deadlift 3×5, then ${rounds} rounds: 25 m sled push, 25 m sled pull, ` +
+          "50 m farmers carry, 20 wall balls. Smooth and controlled.", clamp(m, 45, 60), [
+            liftWarmUp,
+            block("Strength", [
+              step("Back squat", { sets: 4, reps: "5", target: "heavy, 2 reps in reserve", rest: "2–3 min" }),
+              step("Deadlift", { sets: 3, reps: "5", target: "heavy, 2 reps in reserve", rest: "2–3 min" }),
+            ]),
+            block("Stations", [stationStep(1, "round"), stationStep(2, "round"), stationStep(5, "round"),
+              step("Wall balls", { reps: "20" })], { rounds, note: "Smooth and controlled." }),
+          ]);
       }
+      const heavy = phase === "peak" || ctx.week.deload;
+      const lifts = heavy
+        ? [step("Back squat", { sets: 3, reps: "5", target: "heavy but crisp", rest: "2–3 min" }),
+          step("Deadlift", { sets: 3, reps: "3", target: "heavy but crisp", rest: "2–3 min" }),
+          step("Push press", { sets: 3, reps: "5", rest: "2 min" }),
+          step("Pull-ups", { sets: 3, reps: "6", rest: "90 s" })]
+        : [step("Back squat", { sets: 4, reps: "6", target: "2 reps in reserve", rest: "2–3 min" }),
+          step("Deadlift", { sets: 3, reps: "5", target: "2 reps in reserve", rest: "2–3 min" }),
+          step("Walking lunges", { sets: 3, reps: "20 m", rest: "90 s" }),
+          step("Push press", { sets: 3, reps: "8", rest: "90 s" }),
+          step("Pull-ups", { sets: 3, reps: "8", rest: "90 s" })];
       return timed("strength", "strength", "moderate", "Strength",
-        phase === "peak" || ctx.week.deload
+        heavy
           ? "Back squat 3×5, deadlift 3×3, push press 3×5, pull-ups 3×6, core. Heavy but crisp."
-          : "Back squat 4×6, deadlift 3×5, walking lunges 3×20 m, push press 3×8, pull-ups 3×8, core.", clamp(m, 35, 50));
-    case "easy1":
+          : "Back squat 4×6, deadlift 3×5, walking lunges 3×20 m, push press 3×8, pull-ups 3×8, core.", clamp(m, 35, 50), [
+          liftWarmUp,
+          block("Strength", lifts),
+          block("Core", [step("Plank or hollow hold", { sets: 3, reps: "40 s", rest: "30 s" })]),
+        ]);
+    }
+    case "easy1": {
       if (ctx.days === 3) return hyroxSession("strength", ctx);
+      const each = Math.max(5, Math.round(r5(m) / 4));
       return timed("conditioning", "engine", "easy", "Engine",
-        `${r5(m)} min steady on the rower, SkiErg or bike (RPE 5), in 3–4 blocks.`, m);
+        `${r5(m)} min steady on the rower, SkiErg or bike (RPE 5), in 3–4 blocks.`, m, [
+          block("Engine", [step("Rower, SkiErg or bike", { sets: 4, reps: `${each} min`, target: "steady (RPE 5)", rest: "1 min easy" })],
+            { note: "Switch machines between blocks if you like." }),
+        ]);
+    }
     case "easy2":
       return easyRun(ctx, Math.max(4, m / easyMinPerKm(ctx)));
     case "recovery":
@@ -375,15 +500,30 @@ function hyroxSession(role: Role, ctx: Ctx): Spec {
 
 // --- CrossFit ---
 
-const METCONS = [
-  "AMRAP 15: 10 wall balls, 10 box jumps, 10 kettlebell swings",
-  "For time: 21-15-9 thrusters and pull-ups",
-  "EMOM 20: 12 cal row / 10 burpees / 8 power cleans / rest",
-  "AMRAP 12: 5 pull-ups, 10 push-ups, 15 air squats",
-  "5 rounds for time: 400 m run, 15 overhead squats",
-  "For time: 50 double-unders, 40 kettlebell swings, 30 box jumps, 20 toes-to-bar, 10 cleans",
-  "AMRAP 18: 6 deadlifts, 9 hang power cleans, 12 push jerks",
-  "3 rounds: 1 min each of row, burpees, wall balls, toes-to-bar, then rest 1 min",
+/** Each metcon as written in the description, and as steps. */
+const METCONS: [string, Block][] = [
+  ["AMRAP 15: 10 wall balls, 10 box jumps, 10 kettlebell swings",
+    block("AMRAP 15 min", [step("Wall balls", { reps: "10" }), step("Box jumps", { reps: "10" }), step("Kettlebell swings", { reps: "10" })],
+      { note: "As many rounds as possible in 15 minutes." })],
+  ["For time: 21-15-9 thrusters and pull-ups",
+    block("For time", [step("Thrusters", { reps: "21-15-9" }), step("Pull-ups", { reps: "21-15-9" })],
+      { note: "21 of each, then 15, then 9." })],
+  ["EMOM 20: 12 cal row / 10 burpees / 8 power cleans / rest",
+    block("EMOM 20 min", [step("Row", { reps: "12 cal" }), step("Burpees", { reps: "10" }), step("Power cleans", { reps: "8" }),
+      step("Rest", { reps: "1 min" })], { rounds: 5, note: "A new movement every minute, on the minute." })],
+  ["AMRAP 12: 5 pull-ups, 10 push-ups, 15 air squats",
+    block("AMRAP 12 min", [step("Pull-ups", { reps: "5" }), step("Push-ups", { reps: "10" }), step("Air squats", { reps: "15" })],
+      { note: "As many rounds as possible in 12 minutes." })],
+  ["5 rounds for time: 400 m run, 15 overhead squats",
+    block("For time", [step("Run", { reps: "400 m" }), step("Overhead squats", { reps: "15" })], { rounds: 5 })],
+  ["For time: 50 double-unders, 40 kettlebell swings, 30 box jumps, 20 toes-to-bar, 10 cleans",
+    block("For time", [step("Double-unders", { reps: "50" }), step("Kettlebell swings", { reps: "40" }), step("Box jumps", { reps: "30" }),
+      step("Toes-to-bar", { reps: "20" }), step("Cleans", { reps: "10" })])],
+  ["AMRAP 18: 6 deadlifts, 9 hang power cleans, 12 push jerks",
+    block("AMRAP 18 min", [step("Deadlifts", { reps: "6" }), step("Hang power cleans", { reps: "9" }), step("Push jerks", { reps: "12" })],
+      { note: "As many rounds as possible in 18 minutes." })],
+  ["3 rounds: 1 min each of row, burpees, wall balls, toes-to-bar, then rest 1 min",
+    block("Rounds", ["Row", "Burpees", "Wall balls", "Toes-to-bar", "Rest"].map((n) => step(n, { reps: "1 min" })), { rounds: 3 })],
 ];
 
 const LIFTS = ["Back squat", "Deadlift", "Strict press + weighted pull-ups", "Front squat + push jerk technique"];
@@ -392,25 +532,48 @@ function crossfitSession(role: Role, ctx: Ctx): Spec {
   const { phase, index } = ctx.week;
   const m = ctx.minutes[role] ?? MIN_SESSION;
   switch (role) {
-    case "long":
+    case "long": {
+      const third = `${Math.max(5, Math.round(r5(m) / 3))} min`;
       return timed("conditioning", "engine", "moderate", "Engine",
-        `${r5(m)} min mixed aerobic work (row, run, bike) at RPE 6. Keep it steady.`, m);
+        `${r5(m)} min mixed aerobic work (row, run, bike) at RPE 6. Keep it steady.`, m, [
+          block("Engine", ["Row", "Run", "Bike"].map((n) => step(n, { reps: third, target: "steady (RPE 6)" })),
+            { note: "Keep it steady; move straight from one to the next." }),
+        ]);
+    }
     case "q1": {
       if (ctx.special) {
         return timed("crossfit", "simulation", "hard", "Competition simulation",
-          "Two benchmark workouts 90 minutes apart, scored. Warm up as you would on the day.", 75);
+          "Two benchmark workouts 90 minutes apart, scored. Warm up as you would on the day.", 75, [
+            warmUp(15, "Your competition warm-up"),
+            block("Competition", [
+              step("Benchmark workout 1", { target: "scored, all out" }),
+              step("Rest and refuel", { reps: "90 min" }),
+              step("Benchmark workout 2", { target: "scored, all out" }),
+            ]),
+          ]);
       }
-      const wod = METCONS[index % METCONS.length];
+      const [wod, wodBlock] = METCONS[index % METCONS.length];
       return phase === "taper"
-        ? timed("crossfit", "metcon", "moderate", "Short metcon", `${wod}, capped at 8 minutes and done at 80% effort.`, Math.min(m, 35))
-        : timed("crossfit", "metcon", "hard", "Metcon", `Warm up 15 min, then ${wod}. Cool down and stretch.`, m);
+        ? timed("crossfit", "metcon", "moderate", "Short metcon", `${wod}, capped at 8 minutes and done at 80% effort.`, Math.min(m, 35), [
+          warmUp(10),
+          { ...wodBlock, note: "Capped at 8 minutes, at 80% effort." },
+        ])
+        : timed("crossfit", "metcon", "hard", "Metcon", `Warm up 15 min, then ${wod}. Cool down and stretch.`, m, [
+          warmUp(15, "General warm-up and movement prep"),
+          wodBlock,
+          coolDown(5, "Easy movement, then stretch"),
+        ]);
     }
     case "q2": {
       if (phase === "taper") return mobility(25);
       const n = clamp(Math.floor((m - 15) / 3), 4, 10);
       return timed("crossfit", "intervals", "hard", "Intervals",
         `Warm up 10 min, then ${n}× (2 min work / 1 min rest) mixed modal: row, burpees, dumbbell snatches. Hold the pace every round.`,
-        15 + n * 3);
+        15 + n * 3, [
+          warmUp(10),
+          block("Intervals", [step("Mixed: row, burpees, dumbbell snatches", { sets: n, reps: "2 min", target: "hold the pace every round", rest: "1 min" })]),
+          coolDown(5, "Easy movement, then stretch"),
+        ]);
     }
     case "strength": {
       const lift = LIFTS[index % LIFTS.length];
@@ -419,15 +582,34 @@ function crossfitSession(role: Role, ctx: Ctx): Spec {
         : phase === "build" ? "5-3-1 building to a heavy single"
         : phase === "peak" ? "heavy doubles and singles"
         : "light technique sets";
+      const main: Step = ctx.week.deload ? step(lift, { sets: 3, reps: "5", target: "about 65%, crisp and fast", rest: "2 min" })
+        : phase === "base" ? step(lift, { sets: 5, reps: "5", target: "about 70–75%", rest: "2–3 min" })
+        : phase === "build" ? step(lift, { sets: 3, reps: "5, 3, 1", target: "build to a heavy single", rest: "3 min" })
+        : phase === "peak" ? step(lift, { sets: 5, reps: "2 or 1", target: "heavy", rest: "3 min" })
+        : step(lift, { sets: 3, reps: "3", target: "light, technique only", rest: "2 min" });
       return timed("strength", "strength", phase === "taper" ? "easy" : "moderate", `Strength: ${lift}`,
-        `${lift}: ${scheme}, then accessories (single-leg work, core).`, clamp(m, 30, 60));
+        `${lift}: ${scheme}, then accessories (single-leg work, core).`, clamp(m, 30, 60), [
+          liftWarmUp,
+          block("Strength", [main]),
+          block("Accessories", [
+            step("Single-leg work: lunges or step-ups", { sets: 3, reps: "8/leg", rest: "60 s" }),
+            step("Core: hollow hold or plank", { sets: 3, reps: "30–45 s", rest: "30 s" }),
+          ]),
+        ]);
     }
     case "easy1":
       if (ctx.days === 3) return crossfitSession("strength", ctx);
       return timed("crossfit", "skill", "easy", "Gymnastics skill",
-        "Practice handstands, toes-to-bar or muscle-up drills, then light accessories. Quality over fatigue.", clamp(m, 25, 45));
+        "Practice handstands, toes-to-bar or muscle-up drills, then light accessories. Quality over fatigue.", clamp(m, 25, 45), [
+          block("Skill", [
+            step("Handstand practice", { reps: "10 min" }),
+            step("Toes-to-bar or muscle-up drills", { reps: "10 min" }),
+          ], { note: "Quality over fatigue: stop a set when the form slips." }),
+          block("Accessories", [step("Light accessories: ring rows, hollow rocks, banded shoulder work", { sets: 2, reps: "10–12" })]),
+        ]);
     case "easy2":
-      return timed("conditioning", "engine", "easy", "Easy aerobic", `${r5(m)} min easy bike, row or run (RPE 4).`, m);
+      return timed("conditioning", "engine", "easy", "Easy aerobic", `${r5(m)} min easy bike, row or run (RPE 4).`, m,
+        [block("Session", [step("Bike, row or run", { reps: `${r5(m)} min`, target: "easy (RPE 4)" })])]);
     case "recovery":
       return mobility();
   }
@@ -441,29 +623,50 @@ function generalSession(role: Role, ctx: Ctx): Spec {
   switch (role) {
     case "long":
       return timed("conditioning", "long_cardio", "easy", "Long easy cardio",
-        `${r5(m)} min easy: run at ${easyPace(ctx)}, ride or hike.`, m);
+        `${r5(m)} min easy: run at ${easyPace(ctx)}, ride or hike.`, m,
+        [block("Session", [step("Run, ride or hike", { reps: `${r5(m)} min`, target: ctx.hasPaces ? `easy (${easyPace(ctx)} if running)` : EASY_RPE })])]);
     case "q1": {
       const n = clamp(Math.floor((m - 15) / 3), 4, 10);
       return timed("conditioning", "hiit", phase === "taper" ? "moderate" : "hard", "HIIT",
-        `Warm up 10 min, then ${n} rounds of 40 s hard / 20 s easy, three times through with 2 min between. Cool down 5 min.`, m);
+        `Warm up 10 min, then ${n} rounds of 40 s hard / 20 s easy, three times through with 2 min between. Cool down 5 min.`, m, [
+          warmUp(10),
+          block("Intervals", [step("Hard / easy", { sets: n, reps: "40 s / 20 s", target: "hard (RPE 8)" })],
+            { rounds: 3, note: "2 min easy between rounds. Bike, rower, run or a bodyweight circuit." }),
+          coolDown(5),
+        ]);
     }
     case "q2": {
       if (phase === "base" || phase === "taper") {
-        return easyRun(ctx, m / easyMinPerKm(ctx), "Easy run + strides", ", then 6× 20 s strides");
+        return easyRun(ctx, m / easyMinPerKm(ctx), "Easy run + strides", ", then 6× 20 s strides", [strides(6)]);
       }
       const mins = clamp(Math.round(m - 20), 10, 30);
       const T = pace(ctx, "threshold", "comfortably hard (RPE 7)");
-      return timed("run", "tempo", "hard", "Tempo run", `Warm up 10 min, then ${mins} min at ${T}, cool down 10 min.`, mins + 20);
+      return timed("run", "tempo", "hard", "Tempo run", `Warm up 10 min, then ${mins} min at ${T}, cool down 10 min.`, mins + 20, [
+        warmUp(10, "Easy jog"),
+        block("Main set", [step("Tempo", { reps: `${mins} min`, target: T })]),
+        coolDown(10),
+      ]);
     }
     case "strength":
       return timed("strength", "strength", "moderate", "Full-body strength",
         "3 sets each: goblet squats ×10, Romanian deadlifts ×10, push-ups ×10–15, rows ×10, split squats ×8/leg, plank 45 s.",
-        clamp(m, 30, 50));
+        clamp(m, 30, 50), [
+          liftWarmUp,
+          block("Strength", [
+            step("Goblet squats", { sets: 3, reps: "10", target: "2 reps in reserve", rest: "90 s" }),
+            step("Romanian deadlifts", { sets: 3, reps: "10", target: "2 reps in reserve", rest: "90 s" }),
+            step("Push-ups", { sets: 3, reps: "10–15", rest: "60 s" }),
+            step("Rows", { sets: 3, reps: "10", rest: "60 s" }),
+            step("Split squats", { sets: 3, reps: "8/leg", rest: "60 s" }),
+            step("Plank", { sets: 3, reps: "45 s", rest: "30 s" }),
+          ]),
+        ]);
     case "easy1":
       if (ctx.days === 3) return generalSession("strength", ctx);
       return easyRun(ctx, m / easyMinPerKm(ctx));
     case "easy2":
-      return timed("conditioning", "easy_cardio", "easy", "Easy cardio", `${r5(m)} min easy bike, swim or walk.`, m);
+      return timed("conditioning", "easy_cardio", "easy", "Easy cardio", `${r5(m)} min easy bike, swim or walk.`, m,
+        [block("Session", [step("Bike, swim or walk", { reps: `${r5(m)} min`, target: EASY_RPE })])]);
     case "recovery":
       return mobility();
   }
@@ -662,6 +865,13 @@ export function generatePlan(input: PlanInput, profile: Profile, today: string):
       role: "shakeout", discipline: "run" as const, kind: "shakeout", intensity: "easy" as const, title: "Shakeout",
       description: g === "hyrox" ? "15 min easy jog, a few wall balls and mobility. Check your kit." : "20 min easy, then 4× 20 s strides.",
       durationMin: 20, distanceKm: g === "hyrox" ? null : 3,
+      blocks: g === "hyrox"
+        ? [block("Shakeout", [
+          step("Easy jog", { reps: "15 min", target: EASY_RPE }),
+          step("Wall balls", { sets: 2, reps: "5", target: "light, just to feel it" }),
+          step("Mobility", { reps: "5 min" }),
+        ], { note: "Check your kit for tomorrow." })]
+        : [block("Run", [step("Easy running", { reps: "20 min", target: EASY_RPE })]), strides(4)],
     };
     for (const s of sessions) {
       if (s.date === before1) Object.assign(s, shakeout);
@@ -685,11 +895,21 @@ export function generatePlan(input: PlanInput, profile: Profile, today: string):
       : g === "hyrox"
         ? `HYROX race: 8× (1 km run + station). Run the first km controlled${goalTime ? `; goal ${formatDuration(goalTime)}` : ""}, and pace the sleds and lunges, not just the runs.`
         : `${GOAL_LABELS[g]}: warm up properly, pace the first event, fuel between events.`;
+    const raceAt = goalTime && m ? formatPace(goalTime / (m / 1000)) : pred && m ? formatPace(pred / (m / 1000)) : "race effort";
+    const blocks = m
+      ? [block("Warm-up", [step("Easy jog", { reps: "10–15 min", target: EASY_RPE }), step("Strides", { sets: 4, reps: "20 s" })]),
+        block("Race", [step(GOAL_LABELS[g], { reps: `${Math.round(m / 100) / 10} km`, target: raceAt })],
+          { note: "Start the first km a little slower than goal pace, then settle in." })]
+      : g === "hyrox"
+        ? [warmUp(15), block("Race", STATION.flatMap((_, i) => [step("Run", { reps: "1 km" }), stationStep(i, "race")]),
+          { note: "Run the first km controlled; pace the sleds and lunges, not just the runs." })]
+        : [warmUp(15, "Your usual warm-up"), block("Event", [step(name)], { note: "Pace the first event and fuel between events." })];
     sessions.push({
       date, week: w.index + 1, phase: w.phase, role: main ? "race" : "tune_up", discipline: "race", kind: "race",
       intensity: "hard", title: main ? name : `${name} (tune-up)`, description,
       durationMin: r5(goalTime ? goalTime / 60 : pred ? pred / 60 : g === "hyrox" ? 90 : 60),
       distanceKm: m ? Math.round(m / 100) / 10 : null,
+      blocks,
     });
   };
   for (const e of input.otherEvents ?? []) {

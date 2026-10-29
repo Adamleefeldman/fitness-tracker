@@ -81,6 +81,51 @@ describe.each(CASES)("$goal, $days days a week", ({ goal, days }) => {
     const peak = Math.max(...weeks.filter((w) => w[0].phase !== "taper").map(volume));
     for (const w of weeks.filter((w) => w[0].phase === "taper")) expect(volume(w)).toBeLessThan(peak);
   });
+
+  it("details every session's workout", () => {
+    for (const s of p.sessions) {
+      expect(s.blocks?.length, `${s.date} ${s.title}`).toBeGreaterThan(0);
+      for (const b of s.blocks!) {
+        expect(b.steps.length, `${s.date} ${s.title}: ${b.title}`).toBeGreaterThan(0);
+        for (const st of b.steps) {
+          expect(st.name).not.toBe("");
+          if (st.sets != null) expect(st.sets).toBeGreaterThanOrEqual(1);
+        }
+      }
+    }
+  });
+});
+
+describe("workout details", () => {
+  const sessions = (input: Partial<PlanInput> & { goal: Goal }) => plan(input).sessions;
+  const steps = (s: Session) => s.blocks!.flatMap((b) => b.steps);
+
+  it("gives strength sessions sets, reps and rest", () => {
+    const lift = sessions({ goal: "marathon" }).find((s) => s.title === "Strength for runners")!;
+    expect(steps(lift).find((st) => st.name === "Back squats")).toMatchObject({ sets: 3, reps: "8", rest: "90 s" });
+    const light = sessions({ goal: "marathon" }).find((s) => s.title === "Strength (maintenance)")!;
+    expect(steps(light).every((st) => st.sets == null || st.sets === 2)).toBe(true);
+  });
+
+  it("splits quality runs into warm-up, main set and cool-down, with the main set matching the description", () => {
+    for (const s of sessions({ goal: "10k" }).filter((x) => x.kind === "intervals" || x.kind === "hills")) {
+      expect(s.blocks!.map((b) => b.title)).toEqual(["Warm-up", "Main set", "Cool-down"]);
+      const main = s.blocks![1].steps[0];
+      expect(s.description).toContain(`${main.sets}× ${s.kind === "hills" ? "60 s" : main.reps}`);
+    }
+  });
+
+  it("lists the HYROX race stations in order", () => {
+    const sim = sessions({ goal: "hyrox", eventDate: "2027-03-14" }).find((s) => s.title === "Full HYROX simulation")!;
+    const names = steps(sim).map((st) => st.name).filter((n) => n !== "Run");
+    expect(names).toEqual(["Easy jog or row", "SkiErg", "Sled push", "Sled pull", "Burpee broad jumps", "Row",
+      "Farmers carry", "Sandbag lunges", "Wall balls", "Easy walk or jog"]);
+  });
+
+  it("shows the race's distance and pace on race day", () => {
+    const race = plan({ goal: "half_marathon", targetTime: "1:45:00" }).sessions.at(-1)!;
+    expect(race.blocks!.at(-1)!.steps[0]).toMatchObject({ reps: "21.1 km", target: "4:59/km" });
+  });
 });
 
 describe("personalisation", () => {

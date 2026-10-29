@@ -109,6 +109,21 @@ describe("adaptations", () => {
     expect(changes.map((c) => [c.date, c.after])).toEqual([[TODAY, "VO₂max intervals (lighter)"]]);
   });
 
+  it("rewrites the details of eased and lighter sessions", () => {
+    const main = { title: "Main set", steps: [{ name: "Intervals", sets: 6, reps: "1 km", rest: "2 min jog" }] };
+    const lift = { title: "Strength", steps: [{ name: "Back squats", sets: 3, reps: "8" }] };
+    const ss = [
+      session(TODAY, { blocks: [main] }),
+      session("2026-11-05", { discipline: "strength", kind: "strength", intensity: "moderate", title: "Strength", blocks: [lift] }),
+    ];
+    const eased = apply(ss, adaptations(ss, state("recover"), TODAY));
+    expect(eased[0].blocks).toEqual([{ title: "Run", steps: [{ name: "Easy running", reps: "35 min", target: "conversational" }] }]);
+    expect(eased[1].blocks![0].steps[0]).toMatchObject({ name: "Back squats", sets: 2, target: "light (about 60%)" });
+    const lighter = apply(ss, adaptations(ss, state("caution"), TODAY));
+    expect(lighter[0].blocks![0].steps[0].sets).toBe(5);
+    expect(lighter[0].blocks![0].note).toMatch(/^Lighter today/);
+  });
+
   it("is idempotent, and undoes itself when the body recovers", () => {
     const ss = week();
     const adapted = apply(ss, adaptations(ss, state("recover"), TODAY));

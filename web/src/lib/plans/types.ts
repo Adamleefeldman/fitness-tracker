@@ -91,6 +91,29 @@ export interface Profile {
   state: BodyState;
 }
 
+/** One line of a workout: an exercise, a run segment or a station. */
+export interface Step {
+  name: string;
+  /** Sets or repeats, e.g. 3 (sets of squats) or 6 (× 800 m). */
+  sets?: number;
+  /** Each set: reps ("8", "8/leg") or a size ("60 s", "800 m", "20 min"). */
+  reps?: string;
+  /** How hard: a pace, RPE or load. */
+  target?: string;
+  /** Between sets or repeats. */
+  rest?: string;
+  note?: string;
+}
+
+/** A part of a workout: warm-up, main set, rounds, cool-down. */
+export interface Block {
+  title: string;
+  /** Go through the steps this many times. */
+  rounds?: number;
+  steps: Step[];
+  note?: string;
+}
+
 export interface Session {
   date: string;
   /** Week of the plan, from 1. */
@@ -105,6 +128,8 @@ export interface Session {
   description: string;
   durationMin: number;
   distanceKm: number | null;
+  /** The workout in detail. Missing on hand-written sessions and plans from before it existed. */
+  blocks?: Block[];
 }
 
 export interface PhaseSpan {
