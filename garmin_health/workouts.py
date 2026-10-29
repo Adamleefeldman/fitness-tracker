@@ -127,9 +127,12 @@ def _block_steps(block: dict) -> list[dict]:
         if sets <= 1 and not s.get("rest"):
             out.append(work)
             continue
-        # reps with no rest given (strides) still need a breather between them
+        # reps with no rest given still need a breather between them
         rest = s.get("rest") or "recover"
-        recovery = _step("recovery", rest, None, rest if end_condition(rest)[0] == "lap.button" else None)
+        # "2 min jog at 5:27–6:27/km": how long, then the pace to jog it at
+        how, _, rest_pace = rest.partition(" at ")
+        recovery = _step("recovery", how, rest_pace or None,
+                         "Rest" if re.fullmatch(rf"{_NUM}\s*(s|min)", how) else how)
         out.extend([_repeat(sets, [work, recovery])] if sets > 1 else [work, recovery])
     rounds = block.get("rounds") or 1
     return [_repeat(rounds, out)] if rounds > 1 and out else out

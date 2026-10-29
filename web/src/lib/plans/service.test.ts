@@ -71,6 +71,28 @@ describe("store", () => {
     expect(after[0].original.blocks).toEqual(ss[0].blocks);
     expect(after.slice(1).map((s) => s.blocks)).toEqual(ss.slice(1).map((s) => s.blocks));
   });
+
+  it("refreshes the details of plans saved by an older generator, keeping adapted ones", () => {
+    const file = path.join(mkdtempSync(path.join(dir, "v1-")), "plans.db");
+    const db = St.openPlans(file, { create: true })!;
+    const { id } = Sv.createPlan(db, garmin, { goal: "marathon", name: "M", eventDate: "2026-12-06", daysPerWeek: 5 }, NOW);
+    const ss = St.planSessions(db, id);
+    const [plain, adapted] = ss.filter((s) => s.discipline === "run");
+    // a version-1 plans.db: details without paces, and one session adapted since
+    const old = [{ title: "Run", steps: [{ name: "Easy running", reps: "20 min", target: "easy (RPE 3–4)" }] }];
+    const set = db.prepare("UPDATE plan_sessions SET original_json = ?, blocks_json = ?, title = ? WHERE id = ?");
+    set.run(JSON.stringify({ ...plain.original, blocks: old }), JSON.stringify(old), plain.title, plain.id);
+    set.run(JSON.stringify({ ...adapted.original, blocks: old }), JSON.stringify(old), "Easy run (eased)", adapted.id);
+    db.pragma("user_version = 1");
+    db.close();
+
+    const again = St.openPlans(file, { create: false })!;
+    const after = new Map(St.planSessions(again, id).map((s) => [s.id, s]));
+    expect(after.get(plain.id)!.blocks).toEqual(plain.blocks);
+    expect(after.get(adapted.id)!.blocks).toEqual(old); // adaptation re-derives it from the refreshed original
+    expect(after.get(adapted.id)!.original.blocks).toEqual(adapted.blocks);
+    expect(again.pragma("user_version", { simple: true })).toBe(St.BLOCKS_VERSION);
+  });
 });
 
 describe("planView", () => {

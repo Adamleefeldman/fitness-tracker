@@ -70,25 +70,35 @@ export function openPlans(file: string, { create }: { create: boolean }): Databa
   db.pragma("journal_mode = WAL");
   db.exec(SCHEMA);
   const cols = db.prepare("PRAGMA table_info(plan_sessions)").all() as { name: string }[];
-  if (!cols.some((c) => c.name === "blocks_json")) {
+  const noBlocks = !cols.some((c) => c.name === "blocks_json");
+  if (noBlocks) db.exec("ALTER TABLE plan_sessions ADD COLUMN blocks_json TEXT");
+  if (noBlocks || (db.pragma("user_version", { simple: true }) as number) < BLOCKS_VERSION) {
     db.transaction(() => {
-      db.exec("ALTER TABLE plan_sessions ADD COLUMN blocks_json TEXT");
       backfillBlocks(db);
+      db.pragma(`user_version = ${BLOCKS_VERSION}`);
     })();
   }
   return db;
 }
 
 /**
- * Plans saved before sessions had workout details: rebuild each one from what
- * was asked for and the profile it was built from (the generator is
- * deterministic), and give the details to every session whose original still
- * matches, and to the current version when it's unchanged. Anything that
- * doesn't match keeps just its description.
+ * Bump when the generator writes workout details differently, so stored plans
+ * get the new details on their next open. 1: sets, reps and targets added;
+ * 2: explicit paces for easy jogs, strides and recovery jogs.
+ */
+export const BLOCKS_VERSION = 2;
+
+/**
+ * Plans saved by an older generator: rebuild each one from what was asked for
+ * and the profile it was built from (the generator is deterministic), and give
+ * the new details to every session whose original still matches, and to the
+ * current version when it's unchanged. A session that was adapted or edited
+ * keeps the details it has; anything that doesn't match is left as it is.
  */
 function backfillBlocks(db: Database.Database) {
   const key = (s: Session) => `${s.date}|${s.title}|${s.description}`;
-  const update = db.prepare("UPDATE plan_sessions SET original_json = ?, blocks_json = ? WHERE id = ?");
+  const update = db.prepare(
+    "UPDATE plan_sessions SET original_json = ?, blocks_json = COALESCE(?, blocks_json) WHERE id = ?");
   for (const plan of listPlans(db)) {
     let blocks: Map<string, Block[] | undefined>;
     try {

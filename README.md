@@ -156,8 +156,12 @@ uv run python -m garmin_health.cli push-workouts --date 2026-11-03   # just one 
 The phone app syncs them to the watch, where they're under the run's
 *Training → Workouts* (and the calendar). Steps end on a distance or a time;
 "jog back down", "full recovery" and ranges like "10–15 min" end when you press
-*Lap*. Effort targets (RPE) show as the step's note, without pace alerts. A
-single goal pace gets ±5 s/km so the watch doesn't nag at every wobble.
+*Lap*. Every running step has a pace: easy running and jogs at your easy
+pace, strides at repetition pace, recovery jogs from the slow end of easy to a
+minute slower. The exceptions are hill reps, which go by effort (the step's
+note) because pace uphill depends on the hill, and walk-back or full
+recoveries. A single goal pace gets ±5 s/km so the watch doesn't nag at every
+wobble.
 
 Pushing again is safe: unchanged runs are left alone; edited, adapted or moved
 ones are replaced; skipped or removed ones (and the runs of a plan you've

@@ -124,6 +124,14 @@ describe("adaptations", () => {
     expect(lighter[0].blocks![0].note).toMatch(/^Lighter today/);
   });
 
+  it("keeps the plan's easy pace on an eased run", () => {
+    const warm = { title: "Warm-up", steps: [{ name: "Easy running", reps: "2 km", target: "4:57–5:27/km" }] };
+    const main = { title: "Main set", steps: [{ name: "Intervals", sets: 6, reps: "1 km", target: "3:47/km" }] };
+    const ss = [session(TODAY, { blocks: [warm, main] })];
+    const eased = apply(ss, adaptations(ss, state("recover"), TODAY));
+    expect(eased[0].blocks![0].steps[0]).toEqual({ name: "Easy running", reps: "35 min", target: "4:57–5:27/km" });
+  });
+
   it("is idempotent, and undoes itself when the body recovers", () => {
     const ss = week();
     const adapted = apply(ss, adaptations(ss, state("recover"), TODAY));

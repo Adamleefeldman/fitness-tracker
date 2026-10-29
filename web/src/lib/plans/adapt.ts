@@ -113,6 +113,10 @@ export interface Change {
 
 const r5 = (m: number) => Math.max(15, Math.round(m / 5) * 5);
 
+/** The easy pace range a run's workout already uses ("4:57–5:27/km"), if any. */
+const easyPaceOf = (s: Session) =>
+  s.blocks?.flatMap((b) => b.steps).find((st) => /^Easy (running|jog)/.test(st.name) && /^\d+:\d\d–\d+:\d\d\/km$/.test(st.target ?? ""))?.target;
+
 /** An easy version of a session, keeping its discipline. */
 function eased(s: Session, factor: number, why: string): Session {
   const minutes = r5(s.durationMin * factor);
@@ -127,7 +131,7 @@ function eased(s: Session, factor: number, why: string): Session {
   };
   const [title, description] = easy[s.discipline];
   const steps: Record<Discipline, Block[] | undefined> = {
-    run: [{ title: "Run", steps: [{ name: "Easy running", reps: `${minutes} min`, target: "conversational" }] }],
+    run: [{ title: "Run", steps: [{ name: "Easy running", reps: `${minutes} min`, target: easyPaceOf(s) ?? "conversational" }] }],
     race: s.blocks,
     hyrox: [{ title: "Engine", steps: [{ name: "Rower or bike", reps: `${minutes} min`, target: "steady (RPE 4)" }, { name: "Mobility", reps: "10 min" }] }],
     crossfit: [{ title: "Engine", steps: [{ name: "Rower or bike", reps: `${minutes} min`, target: "steady (RPE 4)" }, { name: "Mobility", reps: "10 min" }] }],

@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import { generatePlan, GOAL_SPECS, PlanError } from "./generate";
-import { formatDuration, paces, raceTime, vdotFromRace } from "./paces";
+import { formatDuration, formatPace, paces, raceTime, vdotFromRace } from "./paces";
 import { addDays } from "./profile";
 import { GOALS, type BodyState, type Goal, type PlanInput, type Profile, type Session } from "./types";
 
@@ -120,6 +120,40 @@ describe("workout details", () => {
     const names = steps(sim).map((st) => st.name).filter((n) => n !== "Run");
     expect(names).toEqual(["Easy jog or row", "SkiErg", "Sled push", "Sled pull", "Burpee broad jumps", "Row",
       "Farmers carry", "Sandbag lunges", "Wall balls", "Easy walk or jog"]);
+  });
+
+  it("gives every running step and recovery jog a pace, except the hill reps", () => {
+    const pace = /^\d+:\d\d(–\d+:\d\d)?\/km$/;
+    for (const goal of ["5k", "10k", "half_marathon", "marathon", "general_fitness", "hyrox"] as const) {
+      for (const days of [3, 5, 7]) {
+        const runs = sessions({ goal, daysPerWeek: days })
+          .filter((s) => s.discipline === "run" || (s.discipline === "race" && goal !== "hyrox" && goal !== "general_fitness"));
+        for (const s of runs) {
+          for (const st of steps(s)) {
+            // hill reps go by effort (pace depends on the hill); hyrox shakeout extras aren't running
+            if (st.name === "Uphill" || ["Wall balls", "Mobility"].includes(st.name)) continue;
+            expect(st.target, `${goal} ${s.title}: ${st.name}`).toMatch(pace);
+            if (st.rest?.includes("jog") && st.rest !== "jog back down") {
+              expect(st.rest, `${goal} ${s.title}: ${st.name} rest`).toMatch(/ at \d+:\d\d–\d+:\d\d\/km$/);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("paces strides at repetition pace and recovery jogs just slower than easy", () => {
+    const p = paces(50); // the test profile's
+    const [slow, fast] = p.easy;
+    const easy = `${formatDuration(fast)}–${formatPace(slow)}`;
+    const ss = sessions({ goal: "marathon" });
+    const strides = steps(ss.find((s) => s.title === "Easy run + strides")!).find((st) => st.name.startsWith("Strides"))!;
+    expect(strides).toMatchObject({ reps: "20 s", target: formatPace(p.repetition), rest: "walk back" });
+    // jogs run from the slow end of easy pace to a minute slower
+    const threshold = steps(ss.find((s) => s.kind === "threshold")!).find((st) => st.name === "Threshold")!;
+    expect(threshold.rest).toBe(`${threshold.rest!.split(" at ")[0]} at ${formatDuration(slow)}–${formatPace(slow + 60)}`);
+    const warmUp = ss.at(-1)!.blocks![0].steps;
+    expect(warmUp.map((st) => st.target)).toEqual([easy, formatPace(p.repetition)]);
   });
 
   it("shows the race's distance and pace on race day", () => {

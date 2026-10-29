@@ -143,14 +143,18 @@ const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * clamp
 const step = (name: string, more: Omit<Step, "name"> = {}): Step => ({ name, ...more });
 const block = (title: string, steps: Step[], more: Omit<Block, "title" | "steps"> = {}): Block => ({ title, steps, ...more });
 const EASY_RPE = "easy (RPE 3–4)";
-const warmUp = (min: number, how = "Easy jog or row") => block("Warm-up", [step(how, { reps: `${min} min`, target: EASY_RPE })]);
-const coolDown = (min: number, how = "Easy jog, then stretch") => block("Cool-down", [step(how, { reps: `${min} min`, target: EASY_RPE })]);
+const warmUp = (min: number, how = "Easy jog or row", target = EASY_RPE) =>
+  block("Warm-up", [step(how, { reps: `${min} min`, target })]);
+const coolDown = (min: number, how = "Easy jog, then stretch", target = EASY_RPE) =>
+  block("Cool-down", [step(how, { reps: `${min} min`, target })]);
 /** Before lifting: easy cardio and dynamic mobility. */
 const liftWarmUp = block("Warm-up", [
   step("Easy cardio", { reps: "5 min" }),
   step("Dynamic mobility: leg swings, hip openers, bodyweight squats", { reps: "5 min" }),
 ]);
-const strides = (n: number) => block("Strides", [step("Strides on flat ground", { sets: n, reps: "20 s", target: "fast and relaxed", rest: "walk back" })]);
+/** Strides at repetition pace, walking back between them. */
+const strides = (p: PaceCtx, n: number, name = "Strides on flat ground") =>
+  step(name, { sets: n, reps: "20 s", target: p.hasPaces ? formatPace(p.paces.repetition) : "fast and relaxed", rest: "walk back" });
 
 function pace(ctx: Ctx, key: "marathon" | "threshold" | "interval" | "repetition" | "race", effort: string) {
   if (key === "race") return ctx.racePace ? formatPace(ctx.racePace) : effort;
@@ -161,6 +165,16 @@ function easyPace(p: PaceCtx) {
   if (!p.hasPaces) return "conversational effort (RPE 3–4)";
   const [slow, fast] = p.paces.easy;
   return `${formatDuration(fast)}–${formatPace(slow)}`;
+}
+
+/**
+ * A recovery jog between reps, with its pace: from the slow end of easy pace to
+ * a minute slower, so the watch shows a pace without pushing the recovery.
+ */
+function jog(p: PaceCtx, rest: string) {
+  if (!p.hasPaces) return rest;
+  const slow = p.paces.easy[0];
+  return `${rest} at ${formatDuration(slow)}–${formatPace(slow + 60)}`;
 }
 
 const easyMinPerKm = (p: PaceCtx) => (p.paces.easy[0] + p.paces.easy[1]) / 2 / 60;
@@ -281,19 +295,19 @@ function runSession(role: Role, ctx: Ctx): Spec {
           const { len } = r;
           const n = fit(r.n, len * minPer("interval") + 2.5, 3);
           return workout(ctx, "intervals", "VO₂max intervals", `${n}× ${km1(len)} at ${I}, 2–3 min jog between`,
-            [step("Intervals", { sets: n, reps: km1(len), target: I, rest: "2–3 min jog" })],
+            [step("Intervals", { sets: n, reps: km1(len), target: I, rest: jog(ctx, "2–3 min jog") })],
             n * len, n * (len * minPer("interval") + 2.5));
         }
         const each = clamp(Math.round((main * minPer("threshold")) / 3), 5, 15);
         return workout(ctx, "threshold", "Threshold intervals", `3× ${each} min at ${T}, 2 min jog between`,
-          [step("Threshold", { sets: 3, reps: `${each} min`, target: T, rest: "2 min jog" })],
+          [step("Threshold", { sets: 3, reps: `${each} min`, target: T, rest: jog(ctx, "2 min jog") })],
           (3 * each) / minPer("threshold"), 3 * each + 4);
       }
       // peak: race-specific
       if (g === "marathon") {
         const each = clamp(Math.round((main * minPer("threshold")) / 2), 10, 20);
         return workout(ctx, "threshold", "Threshold", `2× ${each} min at ${T}, 3 min jog between`,
-          [step("Threshold", { sets: 2, reps: `${each} min`, target: T, rest: "3 min jog" })],
+          [step("Threshold", { sets: 2, reps: `${each} min`, target: T, rest: jog(ctx, "3 min jog") })],
           (2 * each) / minPer("threshold"), 2 * each + 3);
       }
       const r = g === "5k" ? reps(main, [1, 0.8], 3, 6)
@@ -302,12 +316,12 @@ function runSession(role: Role, ctx: Ctx): Spec {
       const { len } = r;
       const n = fit(r.n, len * rpMin + 2.5, 2);
       return workout(ctx, "race_pace", `${GOAL_LABELS[g]} pace reps`, `${n}× ${km1(len)} at ${RP}, 2–3 min jog between`,
-        [step("Race-pace reps", { sets: n, reps: km1(len), target: RP, rest: "2–3 min jog" })],
+        [step("Race-pace reps", { sets: n, reps: km1(len), target: RP, rest: jog(ctx, "2–3 min jog") })],
         n * len, n * (len * rpMin + 2.5));
     }
     case "q2": {
-      if (phase === "base") return easyRun(ctx, total, "Easy run + strides", ", then 6× 20 s strides on flat ground", [strides(6)]);
-      if (phase === "taper") return easyRun(ctx, Math.min(total, 6), "Easy run + strides", ", then 4× 20 s strides", [strides(4)]);
+      if (phase === "base") return easyRun(ctx, total, "Easy run + strides", ", then 6× 20 s strides on flat ground", [block("Strides", [strides(ctx, 6)])]);
+      if (phase === "taper") return easyRun(ctx, Math.min(total, 6), "Easy run + strides", ", then 4× 20 s strides", [block("Strides", [strides(ctx, 4)])]);
       if (g === "marathon") {
         const k = clamp(Math.round(main), 4, 16);
         return workout(ctx, "marathon_pace", "Marathon-pace run", `${k} km at ${RP}`,
@@ -321,7 +335,7 @@ function runSession(role: Role, ctx: Ctx): Spec {
       if (phase === "peak") {
         const each = clamp(Math.round((main * minPer("threshold")) / 2), 6, 15);
         return workout(ctx, "threshold", "Threshold", `2× ${each} min at ${T}, 2 min jog between`,
-          [step("Threshold", { sets: 2, reps: `${each} min`, target: T, rest: "2 min jog" })],
+          [step("Threshold", { sets: 2, reps: `${each} min`, target: T, rest: jog(ctx, "2 min jog") })],
           (2 * each) / minPer("threshold"), 2 * each + 2);
       }
       const mins = clamp(Math.round(main * minPer("threshold")), 12, 30);
@@ -415,9 +429,9 @@ function hyroxSession(role: Role, ctx: Ctx): Spec {
         const n = clamp(Math.floor((m - 20) / 6.5), 3, 8);
         return timed("run", "intervals", "hard", "Run intervals",
           `Warm up 10 min, then ${n}× 1 km at ${runPace} with 90 s rest. Cool down 10 min.`, 20 + n * 6.5, [
-            warmUp(10, "Easy jog"),
+            warmUp(10, "Easy jog", easyPace(ctx)),
             block("Main set", [step("Intervals", { sets: n, reps: "1 km", target: runPace, rest: "90 s" })]),
-            coolDown(10),
+            coolDown(10, undefined, easyPace(ctx)),
           ]);
       }
       const rounds = clamp(Math.floor((m - 15) / 10), 2, 6);
@@ -637,14 +651,14 @@ function generalSession(role: Role, ctx: Ctx): Spec {
     }
     case "q2": {
       if (phase === "base" || phase === "taper") {
-        return easyRun(ctx, m / easyMinPerKm(ctx), "Easy run + strides", ", then 6× 20 s strides", [strides(6)]);
+        return easyRun(ctx, m / easyMinPerKm(ctx), "Easy run + strides", ", then 6× 20 s strides", [block("Strides", [strides(ctx, 6)])]);
       }
       const mins = clamp(Math.round(m - 20), 10, 30);
       const T = pace(ctx, "threshold", "comfortably hard (RPE 7)");
       return timed("run", "tempo", "hard", "Tempo run", `Warm up 10 min, then ${mins} min at ${T}, cool down 10 min.`, mins + 20, [
-        warmUp(10, "Easy jog"),
+        warmUp(10, "Easy jog", easyPace(ctx)),
         block("Main set", [step("Tempo", { reps: `${mins} min`, target: T })]),
-        coolDown(10),
+        coolDown(10, undefined, easyPace(ctx)),
       ]);
     }
     case "strength":
@@ -867,11 +881,11 @@ export function generatePlan(input: PlanInput, profile: Profile, today: string):
       durationMin: 20, distanceKm: g === "hyrox" ? null : 3,
       blocks: g === "hyrox"
         ? [block("Shakeout", [
-          step("Easy jog", { reps: "15 min", target: EASY_RPE }),
+          step("Easy jog", { reps: "15 min", target: easyPace(paceCtx) }),
           step("Wall balls", { sets: 2, reps: "5", target: "light, just to feel it" }),
           step("Mobility", { reps: "5 min" }),
         ], { note: "Check your kit for tomorrow." })]
-        : [block("Run", [step("Easy running", { reps: "20 min", target: EASY_RPE })]), strides(4)],
+        : [block("Run", [step("Easy running", { reps: "20 min", target: easyPace(paceCtx) })]), block("Strides", [strides(paceCtx, 4)])],
     };
     for (const s of sessions) {
       if (s.date === before1) Object.assign(s, shakeout);
@@ -897,7 +911,7 @@ export function generatePlan(input: PlanInput, profile: Profile, today: string):
         : `${GOAL_LABELS[g]}: warm up properly, pace the first event, fuel between events.`;
     const raceAt = goalTime && m ? formatPace(goalTime / (m / 1000)) : pred && m ? formatPace(pred / (m / 1000)) : "race effort";
     const blocks = m
-      ? [block("Warm-up", [step("Easy jog", { reps: "10–15 min", target: EASY_RPE }), step("Strides", { sets: 4, reps: "20 s" })]),
+      ? [block("Warm-up", [step("Easy jog", { reps: "10–15 min", target: easyPace(paceCtx) }), strides(paceCtx, 4, "Strides")]),
         block("Race", [step(GOAL_LABELS[g], { reps: `${Math.round(m / 100) / 10} km`, target: raceAt })],
           { note: "Start the first km a little slower than goal pace, then settle in." })]
       : g === "hyrox"

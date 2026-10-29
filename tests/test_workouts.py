@@ -93,26 +93,49 @@ class Workouts(unittest.TestCase):
 
     def test_intervals_with_timed_and_ranged_recoveries(self):
         w = to_workout(session([
-            {"title": "Main set", "steps": [{"name": "Threshold", "sets": 3, "reps": "6 min", "target": "4:07/km", "rest": "2 min jog"}]},
-            {"title": "Main set", "steps": [{"name": "Intervals", "sets": 5, "reps": "800 m", "target": "3:50/km", "rest": "2–3 min jog"}]},
+            {"title": "Main set", "steps": [{"name": "Threshold", "sets": 3, "reps": "6 min", "target": "4:07/km", "rest": "2 min jog at 5:27–6:27/km"}]},
+            {"title": "Main set", "steps": [{"name": "Intervals", "sets": 5, "reps": "800 m", "target": "3:50/km", "rest": "2–3 min jog at 5:27–6:27/km"}]},
+            {"title": "Main set", "steps": [{"name": "Intervals", "sets": 4, "reps": "1 km", "target": "4:10/km", "rest": "90 s"}]},
         ]), "marathon")
-        threshold, intervals = steps(w)
-        self.assertEqual(threshold["workoutSteps"][1]["endConditionValue"], 120)
+        threshold, intervals, standing = steps(w)
+        jog = threshold["workoutSteps"][1]
+        self.assertEqual((jog["endConditionValue"], jog["description"]), (120, "2 min jog"))
+        # recovery jogs carry their pace
+        self.assertEqual(jog["targetType"]["workoutTargetTypeKey"], "pace.zone")
+        self.assertAlmostEqual(jog["targetValueOne"], 1000 / 387, places=3)
+        self.assertAlmostEqual(jog["targetValueTwo"], 1000 / 327, places=3)
         self.assertEqual(intervals["workoutSteps"][0]["preferredEndConditionUnit"], {"unitKey": "meter"})
         ranged = intervals["workoutSteps"][1]
         self.assertEqual((ranged["endCondition"]["conditionTypeKey"], ranged["description"]), ("lap.button", "2–3 min jog"))
+        self.assertEqual(ranged["targetType"]["workoutTargetTypeKey"], "pace.zone")
+        rest = standing["workoutSteps"][1]
+        self.assertEqual((rest["endConditionValue"], rest["description"], rest["targetType"]["workoutTargetTypeKey"]),
+                         (90, "Rest", "no.target"))
 
-    def test_strides_without_a_rest_still_get_a_recovery(self):
+    def test_strides_at_pace_with_a_walk_back(self):
+        w = to_workout(session([{"title": "Strides", "steps": [
+            {"name": "Strides on flat ground", "sets": 6, "reps": "20 s", "target": "3:32/km", "rest": "walk back"}]}]), "marathon")
+        stride, walk = steps(w)[0]["workoutSteps"]
+        self.assertEqual(stride["targetType"]["workoutTargetTypeKey"], "pace.zone")
+        self.assertEqual((walk["endCondition"]["conditionTypeKey"], walk["description"]), ("lap.button", "walk back"))
+        self.assertEqual(walk["targetType"]["workoutTargetTypeKey"], "no.target")
+
+    def test_race_day(self):
         w = to_workout(session([{"title": "Warm-up", "steps": [
-            {"name": "Easy jog", "reps": "10–15 min", "target": "easy (RPE 3–4)"},
-            {"name": "Strides", "sets": 4, "reps": "20 s"},
+            {"name": "Easy jog", "reps": "10–15 min", "target": EASY},
+            {"name": "Strides", "sets": 4, "reps": "20 s", "target": "3:32/km", "rest": "walk back"},
         ]}, {"title": "Race", "steps": [{"name": "Marathon", "reps": "42.2 km", "target": "4:22/km"}]}],
             discipline="race", title="Dead Sea Marathon", day="2027-02-04"), "marathon")
         jog, strides, race = steps(w)
-        self.assertEqual(jog["endCondition"]["conditionTypeKey"], "lap.button")
-        self.assertEqual(jog["description"], "Easy jog · 10–15 min · easy (RPE 3–4)")
+        self.assertEqual((jog["endCondition"]["conditionTypeKey"], jog["targetType"]["workoutTargetTypeKey"]), ("lap.button", "pace.zone"))
+        self.assertEqual(jog["description"], "Easy jog · 10–15 min")
         self.assertEqual([s["stepType"]["stepTypeKey"] for s in strides["workoutSteps"]], ["warmup", "recovery"])
         self.assertEqual(race["endConditionValue"], 42200)
+
+    def test_reps_without_a_rest_still_get_a_recovery(self):
+        w = to_workout(session([{"title": "Main set", "steps": [{"name": "Strides", "sets": 4, "reps": "20 s"}]}]), "marathon")
+        (repeat,) = steps(w)
+        self.assertEqual(repeat["workoutSteps"][1]["description"], "recover")
 
     def test_an_eased_run(self):
         w = to_workout(session([{"title": "Run", "steps": [{"name": "Easy running", "reps": "30 min", "target": "conversational"}]}]), "10k")
