@@ -2,10 +2,13 @@
 
 Runs `garmin_health.cli sync` every morning at **7:00 local** so yesterday's data
 is already in the database when you wake up. `sync` is gap-aware: it re-checks the
-last stored day and fills any days missed while the laptop was off.
+last stored day and fills any days missed while the laptop was off. Then
+`push-workouts` puts the plan's runs for the next 14 days on your Garmin calendar
+(see [Runs on your watch](../README.md#runs-on-your-watch)), so edits and
+adaptations reach the watch by morning.
 
 ## Files
-- `run_sync.sh` — the job: cds to the project, runs the venv Python, logs to `logs/sync.log`.
+- `run_sync.sh` — the job: cds to the project, runs the sync then push-workouts with the venv Python, logs to `logs/sync.log`.
 - `com.adamfeldman.garminsync.plist` — the launchd schedule (7:00 daily).
 
 ## Install (one time)
