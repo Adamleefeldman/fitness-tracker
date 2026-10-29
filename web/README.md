@@ -117,7 +117,7 @@ from; sessions edited by hand keep just their description).
 ### The Plan page's chat
 
 "Ask about your plan" answers questions about sessions and the plan with
-Claude (`claude-opus-5-5`, low effort), using the MCP server's read-only tools
+Claude (`claude-sonnet-5-5`, medium effort), using the MCP server's read-only tools
 (`src/mcp/chat.ts`): it can't change the plan. It needs an API key:
 
 ```bash

@@ -18,7 +18,8 @@ import { localToday } from "../lib/plans/profile.ts";
 import * as PT from "./plan-tools.ts";
 import * as T from "./tools.ts";
 
-const MODEL = "claude-opus-5-5";
+// Sonnet at medium effort: plenty for looking up and explaining a plan, at half Opus's per-token price
+const MODEL = "claude-sonnet-5-5";
 
 /** What the page streams back, one JSON object per line. */
 export type ChatEvent =
@@ -120,8 +121,7 @@ export async function* answer(ctx: PT.PlanCtx, history: ChatTurn[], signal: Abor
     const runner = client.beta.messages.toolRunner({
       model: MODEL,
       max_tokens: 16000,
-      // a chat over a few lookups: low effort answers quickly and cheaply
-      output_config: { effort: "low" },
+      output_config: { effort: "medium" },
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       cache_control: { type: "ephemeral" },

@@ -36,7 +36,7 @@ function sse(content: ({ type: "text"; text: string } | { type: "tool_use"; id: 
   stop: string): Response {
   const events: object[] = [{
     type: "message_start",
-    message: { id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5-5", content: [], stop_reason: null,
+    message: { id: "msg_1", type: "message", role: "assistant", model: "claude-sonnet-5-5", content: [], stop_reason: null,
       stop_sequence: null, usage: { input_tokens: 10, output_tokens: 1 } },
   }];
   content.forEach((b, index) => {
@@ -91,7 +91,7 @@ describe("plan chat", () => {
     expect(events.at(-1)).toEqual({ type: "done" });
 
     const first = requests[0].body;
-    expect(first).toMatchObject({ model: "claude-opus-5-5", fallbacks: "default", output_config: { effort: "low" }, stream: true });
+    expect(first).toMatchObject({ model: "claude-sonnet-5-5", fallbacks: "default", output_config: { effort: "medium" }, stream: true });
     expect(first.system).toContain("Today is 2026-07-20.");
     expect(requests[0].headers.get("anthropic-beta")).toContain("server-side-fallback-2026-07-01");
     expect((first.tools as { name: string }[]).map((t) => t.name)).toEqual([
