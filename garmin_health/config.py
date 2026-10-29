@@ -21,6 +21,10 @@ load_dotenv(ROOT / ".env")
 # overrides it (the web app reads the same variable).
 DB_PATH = Path(os.environ.get("GARMIN_DB_PATH") or ROOT / "garmin.db")
 
+# The dashboard's training plans, next to garmin.db unless PLANS_DB_PATH says
+# otherwise (same rule as web/src/lib/plans-db.ts).
+PLANS_PATH = Path(os.environ.get("PLANS_DB_PATH") or DB_PATH.parent / "plans.db")
+
 # Where garminconnect caches your login token so you don't re-auth every run.
 # Gitignored — it holds session tokens, not your password.
 TOKEN_DIR = ROOT / ".garminconnect"

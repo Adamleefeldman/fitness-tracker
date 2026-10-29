@@ -5,15 +5,20 @@
     uv run python -m garmin_health.cli backfill --days 30  # recent window
     uv run python -m garmin_health.cli sync                # yesterday + any gaps
     uv run python -m garmin_health.cli inspect 2026-06-26  # show payload shapes
+    uv run python -m garmin_health.cli push-workouts --dry-run   # plan runs → watch (preview)
 """
 
 from __future__ import annotations
 
 import argparse
+import sqlite3
+from datetime import date
 
-from garmin_health import db, sync
+from garmin_health import db, push, sync
 from garmin_health.auth import get_client
 from garmin_health.client import describe_payloads
+from garmin_health.config import PLANS_PATH
+from garmin_health.workouts import outline
 
 
 def cmd_init_db(args):
@@ -45,6 +50,29 @@ def cmd_inspect(args):
     describe_payloads(client, args.date)
 
 
+def cmd_push_workouts(args):
+    if not PLANS_PATH.exists():
+        print(f"No plans.db at {PLANS_PATH}: create a plan on the dashboard first.")
+        return
+    today = date.today().isoformat()
+    # a dry run opens plans.db read-only, so it can't change anything
+    uri = f"file:{PLANS_PATH}?mode=ro" if args.dry_run else f"file:{PLANS_PATH}"
+    conn = sqlite3.connect(uri, uri=True)
+    actions = push.plan_actions(conn, today, args.days, only=args.date)
+    if not actions:
+        print("Garmin Connect already has these runs: nothing to push.")
+        return
+    for a in actions:
+        print(a)
+        if args.dry_run and a.workout:
+            print("\n".join(f"    {line}" for line in outline(a.workout)))
+    if args.dry_run:
+        print("Dry run: nothing was sent to Garmin.")
+        return
+    push.apply(conn, get_client(), actions, pause=args.pause)
+    print(f"Done: {len(actions)} change(s) on your Garmin Connect calendar; they reach the watch on its next sync.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="garmin_health", description="Garmin → SQLite sync")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -68,6 +96,13 @@ def build_parser() -> argparse.ArgumentParser:
     i = sub.add_parser("inspect", help="Print raw payload shapes for a date")
     i.add_argument("date", metavar="YYYY-MM-DD", help="Date to inspect")
     i.set_defaults(func=cmd_inspect)
+
+    w = sub.add_parser("push-workouts", help="Put the plan's coming runs on the Garmin calendar and watch")
+    w.add_argument("--days", type=int, default=14, help="How many days ahead, from today (default 14)")
+    w.add_argument("--date", metavar="YYYY-MM-DD", help="Only this day (to try a single session)")
+    w.add_argument("--dry-run", action="store_true", help="Show what would change, step by step, and send nothing")
+    w.add_argument("--pause", type=float, default=0.5, help="Seconds between Garmin calls (default 0.5)")
+    w.set_defaults(func=cmd_push_workouts)
 
     return parser
 

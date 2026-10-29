@@ -141,6 +141,35 @@ Two ways to use it:
 Plans live in `plans.db` next to `garmin.db` (gitignored), so the sync stays the
 only writer of your Garmin data.
 
+### Runs on your watch
+
+The plan's runs can go onto your Garmin Connect calendar as structured
+workouts, so the watch walks you through them: warm-up, each rep and recovery,
+cool-down, with pace alerts wherever the plan gives a pace.
+
+```bash
+uv run python -m garmin_health.cli push-workouts --dry-run   # preview, step by step
+uv run python -m garmin_health.cli push-workouts             # the next 14 days
+uv run python -m garmin_health.cli push-workouts --date 2026-11-03   # just one day
+```
+
+The phone app syncs them to the watch, where they're under the run's
+*Training → Workouts* (and the calendar). Steps end on a distance or a time;
+"jog back down", "full recovery" and ranges like "10–15 min" end when you press
+*Lap*. Effort targets (RPE) show as the step's note, without pace alerts. A
+single goal pace gets ±5 s/km so the watch doesn't nag at every wobble.
+
+Pushing again is safe: unchanged runs are left alone; edited, adapted or moved
+ones are replaced; skipped or removed ones (and the runs of a plan you've
+replaced) come off. Past days and sessions marked done are never touched, and
+neither is anything you made in Garmin Connect yourself. `plans.db` keeps track
+in a `garmin_workouts` table.
+
+For now this covers runs (and the race day of a running goal); strength,
+HYROX and CrossFit sessions stay on the dashboard. It uses the same unofficial
+Garmin login as the sync, so it's the first thing here that **writes** to your
+Garmin account.
+
 ## Data model
 
 | Table | Grain | Holds |
@@ -162,7 +191,10 @@ garmin_health/        package
   db.py               connection + idempotent upserts
   client.py           flattens Garmin JSON → clean rows
   sync.py             backfill + gap-aware daily sync
+  workouts.py         plan runs → Garmin structured workouts
+  push.py             puts them on the Garmin Connect calendar (and the watch)
   cli.py              command-line entry point
+tests/                Python tests: uv run python -m unittest
 hello.py              Phase 0 first contact (first login + 2FA)
 automation/           Phase 2 launchd scheduler + install guide
 web/                  Phase 3 dashboard (Next.js), Phase 4 MCP server, Phase 5 training plans
